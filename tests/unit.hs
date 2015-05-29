@@ -94,21 +94,23 @@ timeSeriesQueryV = [aesonQQ|
 |]
 
 timeSeriesQueryQ :: Query
-timeSeriesQueryQ =
-    QueryTimeSeries
-        (DataSourceString "sample_datasource")
-        GranularityDay
-        (Just $ FilterAnd
-            [ FilterSelector "sample_dimension1" "sample_value1"
-            , FilterOr
-                [ FilterSelector "sample_dimension2" "sample_value2"
-                , FilterSelector "sample_dimension3" "sample_value3"
-                ]
-            ])
-        []
-        []
-        []
-
+timeSeriesQueryQ = QueryTimeSeries
+    { _queryDataSource = DataSourceString "sample_datasource"
+    , _queryGranularity = GranularityDay
+    , _queryFilter = Just $ FilterAnd
+        [ FilterSelector "sample_dimension1" "sample_value1"
+        , FilterOr
+            [ FilterSelector "sample_dimension2" "sample_value2"
+            , FilterSelector "sample_dimension3" "sample_value3"
+            ]
+        ]
+    , _queryAggregations =
+        [ AggregationLongSum "sample_name1" "sample_fieldName1"
+        , AggregationDoubleSum "sample_name2" "sample_fieldName2"
+        ]
+    , _queryPostAggregations = []
+    , _queryIntervals = []
+    }
 
 topNQueryV :: Value
 topNQueryV = [aesonQQ|

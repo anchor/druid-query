@@ -116,18 +116,18 @@ data Filter
     -- be used as the base filters for more complex Boolean expressions of
     -- filters.
     = FilterSelector
-        { _selectorDimension :: Dimension
-        , _selectorValue     :: Text
+        { _selectorDimension      :: Dimension
+        , _selectorValue          :: Text
         }
     | FilterRegularExpression
-        { _selectorDimension :: Dimension
-        , _selectorPattern   :: Text }
+        { _selectorDimension      :: Dimension
+        , _selectorPattern        :: Text }
     | FilterJS
-        { _selectorDimension :: Dimension
-        , _selectorFunction  :: JS }
+        { _selectorDimension      :: Dimension
+        , _selectorFunction       :: JS }
     | FilterAnd { _selectorFields :: [Filter] }
     | FilterOr  { _selectorFields :: [Filter] }
-    | FilterNot { _selectorField :: Filter }
+    | FilterNot { _selectorField  :: Filter }
 
 -- | TODO: Undocumented
 newtype Dimension = Dimension { unDimension :: Text }
@@ -166,14 +166,14 @@ data Aggregation
     | AggregationJS
         { _aggregationName              :: OutputName
         , _aggregationFieldNames        :: [MetricName]
-        , _aggregationAggregateFunction :: JS
-        , _aggregationCombineFunction   :: JS
-        , _aggregationResetFunction     :: JS
+        , _aggregationFunctionAggregate :: JS
+        , _aggregationFunctionCombine   :: JS
+        , _aggregationFunctionReset     :: JS
         }
     | AggregationCardinality
         { _aggregationName       :: OutputName
         , _aggregationFieldNames :: [MetricName]
-        , _aggregationByRow      :: Bool
+        , _aggregationByRow      :: Maybe Bool
         }
     | AggregationFiltered
         { _aggregationFilter     :: Filter
@@ -188,15 +188,60 @@ data Metric
 
 instance ToJSON Query where
     toJSON QueryTimeSeries{..} = object $
-        [ "queryType" .= String "timeseries"
-        , "granularity" .= toJSON _queryGranularity
-        , "dataSource"  .= toJSON _queryDataSource
+        [ "queryType"    .= String "timeseries"
+        , "granularity"  .= toJSON _queryGranularity
+        , "dataSource"   .= toJSON _queryDataSource
         , "aggregations" .= toJSON _queryAggregations
         ]
-        <> fmap (("filter" .=) . toJSON) (maybeToList _queryFilter)
+        <> fmap ("filter" .=) (maybeToList _queryFilter)
 
 instance ToJSON Aggregation where
-    toJSON _ = error "no aggregation for you"
+    toJSON AggregationCount{..} = object $
+        [ "type" .= String "count"
+        , "name" .= _aggregationName
+        ]
+    toJSON AggregationLongSum{..} = object $
+        [ "type"      .= String "longSum"
+        , "name"      .= _aggregationName
+        , "fieldName" .= _aggregationFieldName
+        ]
+    toJSON AggregationDoubleSum{..} = object $
+        [ "type"      .= String "doubleSum"
+        , "name"      .= _aggregationName
+        , "fieldName" .= _aggregationFieldName
+        ]
+    toJSON AggregationMin{..} = object $
+        [ "type"      .= String "min"
+        , "name"      .= _aggregationName
+        ]
+    toJSON AggregationMax{..} = object $
+        [ "type"      .= String "max"
+        , "name"      .= _aggregationName
+        ]
+    toJSON AggregationJS{..} = object $
+        [ "type"        .= String "javascript"
+        , "name"        .= _aggregationName
+        , "fieldNames"  .= _aggregationFieldNames
+        , "fnAggregate" .= _aggregationFunctionAggregate
+        , "fnCombine"   .= _aggregationFunctionCombine
+        , "fnReset"     .= _aggregationFunctionReset
+        ]
+    toJSON AggregationCardinality{..} = object $
+        [ "type"       .= String "cardinality"
+        , "name"       .= _aggregationName
+        , "fieldNames" .= _aggregationFieldNames
+        ]
+        <> fmap ("byRow" .=) (maybeToList _aggregationByRow)
+    toJSON AggregationHyperUnique{..} = object $
+        [ "type"       .= String "hyperUnique"
+        , "name"       .= _aggregationName
+        , "fieldName" .= _aggregationFieldName
+        ]
+    toJSON AggregationFiltered{..} = object $
+        [ "type"       .= String "filtered"
+        , "filter"     .= _aggregationFilter
+        , "aggregator" .= _aggregationAggregator
+        ]
 
 instance ToJSON DataSource where
     toJSON DataSourceString{..} = String _dataSourceString
@@ -212,29 +257,29 @@ instance ToJSON Granularity where
 
 instance ToJSON Filter where
     toJSON FilterSelector{..} = object $
-        [ "type" .= String "selector"
+        [ "type"      .= String "selector"
         , "dimension" .= _selectorDimension
-        , "value" .= _selectorValue
+        , "value"     .= _selectorValue
         ]
     toJSON FilterRegularExpression{..} = object $
-        [ "type" .= String "regex"
+        [ "type"      .= String "regex"
         , "dimension" .= _selectorDimension
-        , "pattern" .= _selectorPattern
+        , "pattern"   .= _selectorPattern
         ]
     toJSON FilterJS{..} = object $
-        [ "type" .= String "javascript"
+        [ "type"      .= String "javascript"
         , "dimension" .= _selectorDimension
-        , "function" .=  _selectorFunction
+        , "function"  .= _selectorFunction
         ]
     toJSON FilterAnd{..} = object $
-        [ "type" .= String "and"
-        , "fields" .=  toJSON _selectorFields
+        [ "type"   .= String "and"
+        , "fields" .= _selectorFields
         ]
     toJSON FilterOr{..} = object $
-        [ "type" .= String "or"
-        , "fields" .=  toJSON _selectorFields
+        [ "type"   .= String "or"
+        , "fields" .= _selectorFields
         ]
     toJSON FilterNot{..} = object $
-        [ "type" .= String "not"
-        , "field" .=  toJSON _selectorField
+        [ "type"  .= String "not"
+        , "field" .= _selectorField
         ]
