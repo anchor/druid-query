@@ -96,7 +96,7 @@ timeSeriesQueryV = [aesonQQ|
 timeSeriesQueryQ :: Query
 timeSeriesQueryQ =
     QueryTimeSeries
-        DataSource
+        (DataSourceString "sample_datasource")
         GranularityDay
         (Just $ FilterAnd
             [ FilterSelector "sample_dimension1" "sample_value1"

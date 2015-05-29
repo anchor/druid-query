@@ -31,6 +31,7 @@ import Control.Applicative
 import Data.Aeson
 import Data.Maybe
 import Data.Monoid
+import Data.String
 import Data.Text
 
 -- | Druid has numerous query types for various use cases. Queries are composed
@@ -88,7 +89,8 @@ data Threshold
 -- query can also masquerade as a data source, providing subquery-like
 -- functionality. Query data sources are currently supported only by GroupBy
 -- queries.
-data DataSource = DataSource
+data DataSource =
+    DataSourceString { _dataSourceString :: Text }
 
 
 -- | The granularity field determines how data gets bucketed across the time
@@ -114,21 +116,70 @@ data Filter
     -- be used as the base filters for more complex Boolean expressions of
     -- filters.
     = FilterSelector
-        { _selectorDimension :: Text
+        { _selectorDimension :: Dimension
         , _selectorValue     :: Text
         }
     | FilterRegularExpression
-        { _selectorDimension :: Text
+        { _selectorDimension :: Dimension
         , _selectorPattern   :: Text }
     | FilterJS
-        { _selectorDimension :: Text
-        , _selectorFunction  :: Text }
+        { _selectorDimension :: Dimension
+        , _selectorFunction  :: JS }
     | FilterAnd { _selectorFields :: [Filter] }
     | FilterOr  { _selectorFields :: [Filter] }
-    | FilterNot { _selectorField  :: Filter }
+    | FilterNot { _selectorField :: Filter }
 
-data Dimension
+-- | TODO: Undocumented
+newtype Dimension = Dimension { unDimension :: Text }
+    deriving (IsString, ToJSON)
+
+newtype JS = JS { unJS :: Text }
+    deriving (IsString, ToJSON)
+
+-- | TODO: Undocumented
+newtype OutputName = OutputName { unOutputName :: Text }
+    deriving (IsString, ToJSON)
+
+-- | TODO: Undocumented
+newtype MetricName = MetricName { unMetricName :: Text }
+    deriving (IsString, ToJSON)
+
+-- | Aggregations are specifications of processing over metrics available in
+-- Druid. Available aggregations are:
 data Aggregation
+    = AggregationCount { _aggregationName :: OutputName }
+    | AggregationLongSum
+        { _aggregationName      :: OutputName
+        , _aggregationFieldName :: MetricName }
+    | AggregationDoubleSum
+        { _aggregationName      :: OutputName
+        , _aggregationFieldName :: MetricName }
+    | AggregationMin
+        { _aggregationName      :: OutputName
+        , _aggregationFieldName :: MetricName }
+    | AggregationMax
+        { _aggregationName      :: OutputName
+        , _aggregationFieldName :: MetricName }
+    | AggregationHyperUnique
+        { _aggregationName      :: OutputName
+        , _aggregationFieldName :: MetricName }
+    | AggregationJS
+        { _aggregationName              :: OutputName
+        , _aggregationFieldNames        :: [MetricName]
+        , _aggregationAggregateFunction :: JS
+        , _aggregationCombineFunction   :: JS
+        , _aggregationResetFunction     :: JS
+        }
+    | AggregationCardinality
+        { _aggregationName       :: OutputName
+        , _aggregationFieldNames :: [MetricName]
+        , _aggregationByRow      :: Bool
+        }
+    | AggregationFiltered
+        { _aggregationFilter     :: Filter
+        , _aggregationAggregator :: Aggregation
+        }
+
 data PostAggregation
 data Interval
 data Metric
@@ -137,8 +188,18 @@ data Metric
 
 instance ToJSON Query where
     toJSON QueryTimeSeries{..} = object $
-        [ "granularity" .= toJSON _queryGranularity ]
+        [ "queryType" .= String "timeseries"
+        , "granularity" .= toJSON _queryGranularity
+        , "dataSource"  .= toJSON _queryDataSource
+        , "aggregations" .= toJSON _queryAggregations
+        ]
         <> fmap (("filter" .=) . toJSON) (maybeToList _queryFilter)
+
+instance ToJSON Aggregation where
+    toJSON _ = error "no aggregation for you"
+
+instance ToJSON DataSource where
+    toJSON DataSourceString{..} = String _dataSourceString
 
 instance ToJSON Granularity where
     toJSON GranularityAll           = "all"
