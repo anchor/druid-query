@@ -17,6 +17,7 @@ import Test.Hspec.QuickCheck
 import Test.QuickCheck
 import Data.Aeson
 import Data.Aeson.QQ
+import Data.Aeson.Diff
 
 import Network.Druid.Query
 
@@ -260,7 +261,7 @@ suite :: Spec
 suite = 
     describe "ToJSON for Query" $ do
         it "has correct output for known TimeSeries" $ do
-            toJSON timeSeriesQueryQ `shouldBe` timeSeriesQueryV
+            diff (toJSON timeSeriesQueryQ) timeSeriesQueryV `shouldBe` Patch []
         it "has correct output for known TopN"  pending
         it "has correct output for known GroupBy"  pending
         it "has correct output for many combinations"  pending

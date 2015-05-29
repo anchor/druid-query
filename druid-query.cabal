@@ -23,6 +23,7 @@ library
   exposed-modules:     Network.Druid.Query
   build-depends:       base >=4.7 && <4.8
                      , aeson
+                     , scientific
                      , bytestring
                      , pipes-http
                      , pipes-aeson
@@ -38,6 +39,7 @@ test-suite unit
   build-depends:       base >=4.7 && <4.8
                      , aeson
                      , aeson-qq
+                     , aeson-diff
                      , druid-query
                      , QuickCheck
                      , hspec

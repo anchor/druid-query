@@ -22,6 +22,9 @@ module Network.Druid.Query
     Dimension(..),
     Aggregation(..),
     PostAggregation(..),
+    NumericalValue(..),
+    ArithmeticFunction(..),
+    PostAggregationOrdering(..),
     Interval(..),
     Metric(..),
 
@@ -31,6 +34,7 @@ import Control.Applicative
 import Data.Aeson
 import Data.Maybe
 import Data.Monoid
+import Data.Scientific (Scientific (..))
 import Data.String
 import Data.Text
 
@@ -116,18 +120,18 @@ data Filter
     -- be used as the base filters for more complex Boolean expressions of
     -- filters.
     = FilterSelector
-        { _selectorDimension      :: Dimension
-        , _selectorValue          :: Text
+        { _selectorDimension :: Dimension
+        , _selectorValue     :: Text
         }
     | FilterRegularExpression
-        { _selectorDimension      :: Dimension
-        , _selectorPattern        :: Text }
+        { _selectorDimension :: Dimension
+        , _selectorPattern   :: Text }
     | FilterJS
-        { _selectorDimension      :: Dimension
-        , _selectorFunction       :: JS }
+        { _selectorDimension :: Dimension
+        , _selectorFunction  :: JS }
     | FilterAnd { _selectorFields :: [Filter] }
     | FilterOr  { _selectorFields :: [Filter] }
-    | FilterNot { _selectorField  :: Filter }
+    | FilterNot { _selectorField :: Filter }
 
 -- | TODO: Undocumented
 newtype Dimension = Dimension { unDimension :: Text }
@@ -180,7 +184,76 @@ data Aggregation
         , _aggregationAggregator :: Aggregation
         }
 
+-- | Post-aggregations are specifications of processing that should happen on
+-- aggregated values as they come out of Druid. If you include a post
+-- aggregation as part of a query, make sure to include all aggregators the
+-- post-aggregator requires.
 data PostAggregation
+    -- | The arithmetic post-aggregator applies the provided function to the
+    -- given fields from left to right. The fields can be aggregators or other
+    -- post aggregators.
+    --
+    -- Supported functions are +, -, *, /, and quotient.
+    --
+    -- Note:
+    --
+    -- / division always returns 0 if dividing by 0, regardless of the
+    -- numerator. quotient division behaves like regular floating point
+    -- division Arithmetic post-aggregators may also specify an ordering, which
+    -- defines the order of resulting values when sorting results (this can be
+    -- useful for topN queries for instance):
+    --
+    -- If no ordering (or 'PostAggregationOrderingNull') is specified, the
+    -- default floating point ordering is used.
+    -- 'PostAggregationOrderingNumericFirst' ordering always returns finite
+    -- values first, followed by NaN, and infinite values last.
+    = PostAggregationArithmetic
+        { _postAggregationName               :: OutputName
+        , _postAggregationArithmeticFunction :: ArithmeticFunction
+        , _postAggregationFields             :: [PostAggregation]
+        , _postAggregationOrdering           :: Maybe PostAggregationOrdering
+        }
+    -- | This returns the value produced by the specified aggregator.
+    --
+    -- fieldName refers to the output name of the aggregator given in the
+    -- aggregations portion of the query.
+    | PostAggregationFieldAccess
+        { _postAggregationFieldName :: OutputName }
+    -- | The constant post-aggregator always returns the specified value.
+    | PostAggregationConstant
+        { _postAggregationFieldName :: OutputName
+        , _postAggregationValue     :: NumericalValue }
+    -- | Applies the provided JavaScript function to the given fields. Fields
+    -- are passed as arguments to the JavaScript function in the given order.
+    | PostAggregationJS
+        { _postAggregationName       :: OutputName
+        , _postAggregationFieldNames :: [OutputName]
+        , _postAggregationFunction   :: JS
+        }
+    -- | The 'PostAggregationHyperUniqueCardinality' post aggregator is used to
+    -- wrap a hyperUnique object such that it can be used in post aggregations.
+    | PostAggregationHyperUniqueCardinality
+        { _postAggregationFieldName :: OutputName }
+
+newtype NumericalValue = NumericalValue { unNumericalValue :: Scientific }
+    deriving Num
+
+-- | An arithmetic function as supported by 'PostAggregation'
+data ArithmeticFunction
+    -- | Addition
+    = APlus
+    -- | Subtraction
+    | AMinus
+    -- | Multiplication
+    | AMult
+    -- | Division
+    | ADiv
+    -- | Quotient
+    | AQuot
+
+data PostAggregationOrdering
+    = PostAggregationOrderingNull | PostAggregationOrderingNumericFirst
+
 data Interval
 data Metric
 
