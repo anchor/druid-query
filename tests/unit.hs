@@ -18,6 +18,7 @@ import Test.QuickCheck
 import Data.Aeson
 import Data.Aeson.QQ
 import Data.Aeson.Diff
+import Data.Time.QQ
 
 import Network.Druid.Query
 
@@ -88,7 +89,7 @@ timeSeriesQueryV = [aesonQQ|
       }
    ],
    "intervals" : [
-      "2012-01-01T00:00:00.000/2012-01-03T00:00:00.000"
+      "2012-01-01T00:00:00/2012-01-03T00:00:00"
    ],
    "queryType" : "timeseries"
 }
@@ -109,8 +110,17 @@ timeSeriesQueryQ = QueryTimeSeries
         [ AggregationLongSum "sample_name1" "sample_fieldName1"
         , AggregationDoubleSum "sample_name2" "sample_fieldName2"
         ]
-    , _queryPostAggregations = []
-    , _queryIntervals = []
+    , _queryPostAggregations = Just
+        [ PostAggregationArithmetic
+            "sample_divide"
+            ADiv
+            [ PostAggregationFieldAccess "sample_name1" "sample_fieldName1"
+            , PostAggregationFieldAccess "sample_name2" "sample_fieldName2"
+            ]
+            Nothing
+        ]
+    , _queryIntervals =
+        [ Interval [utcIso8601| 2012-01-01 |] [utcIso8601| 2012-01-03 |] ]
     }
 
 topNQueryV :: Value

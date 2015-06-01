@@ -27,16 +27,22 @@ module Network.Druid.Query
     PostAggregationOrdering(..),
     Interval(..),
     Metric(..),
-
+    UTCTime(..)
 ) where
 
 import Control.Applicative
 import Data.Aeson
 import Data.Maybe
+import Data.Bifunctor
 import Data.Monoid
+import Data.Time.Locale.Compat(defaultTimeLocale)
 import Data.Scientific (Scientific (..))
 import Data.String
-import Data.Text
+import Data.Text (Text)
+import Data.Time.Clock(UTCTime(..))
+import qualified Data.Text as T
+import Data.Time.Format(formatTime)
+import Data.Time.ISO8601(formatISO8601Millis)
 
 -- | Druid has numerous query types for various use cases. Queries are composed
 -- of various JSON properties and Druid has different types of queries for
@@ -50,7 +56,7 @@ data Query
         , _queryGranularity      :: Granularity
         , _queryFilter           :: Maybe Filter
         , _queryAggregations     :: [Aggregation]
-        , _queryPostAggregations :: [PostAggregation]
+        , _queryPostAggregations :: Maybe [PostAggregation]
         , _queryIntervals        :: [Interval]
         }
     -- | TopN queries return a sorted set of results for the values in a given
@@ -72,7 +78,7 @@ data Query
         , _queryGranularity      :: Granularity
         , _queryFilter           :: Maybe Filter
         , _queryAggregations     :: [Aggregation]
-        , _queryPostAggregations :: [PostAggregation]
+        , _queryPostAggregations :: Maybe [PostAggregation]
         , _queryIntervals        :: [Interval]
         , _queryDimensions       :: [Dimension]
         , _queryThreshold        :: Threshold
@@ -193,15 +199,16 @@ data PostAggregation
     -- given fields from left to right. The fields can be aggregators or other
     -- post aggregators.
     --
-    -- Supported functions are +, -, *, /, and quotient.
+    -- Supported functions are 'APlus', 'AMinus', 'AMulti', 'ADiv', and
+    -- 'AQuot'.
     --
     -- Note:
     --
-    -- / division always returns 0 if dividing by 0, regardless of the
-    -- numerator. quotient division behaves like regular floating point
-    -- division Arithmetic post-aggregators may also specify an ordering, which
-    -- defines the order of resulting values when sorting results (this can be
-    -- useful for topN queries for instance):
+    -- Division always returns 0 if dividing by 0, regardless of the numerator.
+    -- quotient division behaves like regular floating point division
+    -- Arithmetic post-aggregators may also specify an ordering, which defines
+    -- the order of resulting values when sorting results (this can be useful
+    -- for 'TopN' queries for instance):
     --
     -- If no ordering (or 'PostAggregationOrderingNull') is specified, the
     -- default floating point ordering is used.
@@ -218,11 +225,12 @@ data PostAggregation
     -- fieldName refers to the output name of the aggregator given in the
     -- aggregations portion of the query.
     | PostAggregationFieldAccess
-        { _postAggregationFieldName :: OutputName }
+        { _postAggregationName      :: OutputName
+        , _postAggregationFieldName :: OutputName }
     -- | The constant post-aggregator always returns the specified value.
     | PostAggregationConstant
-        { _postAggregationFieldName :: OutputName
-        , _postAggregationValue     :: NumericalValue }
+        { _postAggregationName  :: OutputName
+        , _postAggregationValue :: NumericalValue }
     -- | Applies the provided JavaScript function to the given fields. Fields
     -- are passed as arguments to the JavaScript function in the given order.
     | PostAggregationJS
@@ -251,10 +259,17 @@ data ArithmeticFunction
     -- | Quotient
     | AQuot
 
+-- | If PostAggregationOrderingNull is specified, the default floating point
+-- ordering is used. 'PostAggregationOrderingNumericFirst' ordering always
+-- returns finite values first, followed by NaN, and infinite values last.
 data PostAggregationOrdering
     = PostAggregationOrderingNull | PostAggregationOrderingNumericFirst
 
-data Interval
+data Interval = Interval
+    { _intervalStart :: UTCTime
+    , _intervalEnd   :: UTCTime
+    }
+
 data Metric
 
 -- * Instances
@@ -265,8 +280,17 @@ instance ToJSON Query where
         , "granularity"  .= toJSON _queryGranularity
         , "dataSource"   .= toJSON _queryDataSource
         , "aggregations" .= toJSON _queryAggregations
+        , "intervals"    .= toJSON _queryIntervals
         ]
+        <> fmap ("postAggregations" .=) (maybeToList _queryPostAggregations)
         <> fmap ("filter" .=) (maybeToList _queryFilter)
+
+instance ToJSON Interval where
+    toJSON Interval{..} =
+        let (l,r) = (fmt _intervalStart, fmt _intervalEnd)
+        in String $ l <> "/" <> r 
+      where
+        fmt = T.pack . formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S%Q"
 
 instance ToJSON Aggregation where
     toJSON AggregationCount{..} = object $
@@ -306,8 +330,8 @@ instance ToJSON Aggregation where
         ]
         <> fmap ("byRow" .=) (maybeToList _aggregationByRow)
     toJSON AggregationHyperUnique{..} = object $
-        [ "type"       .= String "hyperUnique"
-        , "name"       .= _aggregationName
+        [ "type"      .= String "hyperUnique"
+        , "name"      .= _aggregationName
         , "fieldName" .= _aggregationFieldName
         ]
     toJSON AggregationFiltered{..} = object $
@@ -315,6 +339,46 @@ instance ToJSON Aggregation where
         , "filter"     .= _aggregationFilter
         , "aggregator" .= _aggregationAggregator
         ]
+
+instance ToJSON PostAggregation where
+    toJSON PostAggregationArithmetic{..} = object $
+        [ "type"   .= String "arithmetic"
+        , "name"   .= _postAggregationName
+        , "fn"     .= _postAggregationArithmeticFunction
+        , "fields" .= _postAggregationFields
+        ]
+        <> fmap ("ordering" .=) (maybeToList _postAggregationOrdering)
+    toJSON PostAggregationFieldAccess{..} = object $
+        [ "type"      .= String "fieldAccess"
+        , "name"      .= _postAggregationName
+        , "fieldName" .= _postAggregationFieldName
+        ]
+    toJSON PostAggregationConstant{..} = object $
+        [ "type"  .= String "constant"
+        , "name"  .= _postAggregationName
+        , "value" .= Number (unNumericalValue _postAggregationValue)
+        ]
+    toJSON PostAggregationJS{..} = object $
+        [ "type"       .= String "javascript"
+        , "name"       .= _postAggregationName
+        , "fieldNames" .= _postAggregationFieldNames
+        , "function"   .= _postAggregationFunction
+        ]
+    toJSON PostAggregationHyperUniqueCardinality{..} = object $
+        [ "type"      .= String "hyperUniqueCardinality"
+        , "fieldName" .= _postAggregationFieldName
+        ]
+
+instance ToJSON PostAggregationOrdering where
+    toJSON PostAggregationOrderingNull         = Null
+    toJSON PostAggregationOrderingNumericFirst = "numericFirst"
+
+instance ToJSON ArithmeticFunction where
+    toJSON APlus  = "+"
+    toJSON AMinus = "-"
+    toJSON AMult  = "*"
+    toJSON ADiv   = "/"
+    toJSON AQuot  = "quotient"
 
 instance ToJSON DataSource where
     toJSON DataSourceString{..} = String _dataSourceString

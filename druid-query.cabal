@@ -24,9 +24,13 @@ library
   build-depends:       base >=4.7 && <4.8
                      , aeson
                      , scientific
+                     , bifunctors
                      , bytestring
                      , pipes-http
+                     , time-locale-compat
                      , pipes-aeson
+                     , iso8601-time
+                     , time
                      , text
                      , unordered-containers
                      , vector
@@ -41,5 +45,6 @@ test-suite unit
                      , aeson-qq
                      , aeson-diff
                      , druid-query
+                     , time-qq
                      , QuickCheck
                      , hspec
