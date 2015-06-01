@@ -26,7 +26,7 @@ module Network.Druid.Query
     ArithmeticFunction(..),
     PostAggregationOrdering(..),
     Interval(..),
-    Metric(..),
+    MetricName(..),
     UTCTime(..)
 ) where
 
@@ -80,9 +80,9 @@ data Query
         , _queryAggregations     :: [Aggregation]
         , _queryPostAggregations :: Maybe [PostAggregation]
         , _queryIntervals        :: [Interval]
-        , _queryDimensions       :: [Dimension]
+        , _queryDimension        :: Dimension
         , _queryThreshold        :: Threshold
-        , _queryMetric           :: Metric
+        , _queryMetric           :: MetricName
         }
     -- | These types of queries take a groupBy query object and return an array
     -- of JSON objects where each object represents a grouping asked for by the
@@ -93,14 +93,15 @@ data Query
     -- performance for that use case is also substantially better.
     | QueryGroupBy
 
-data Threshold
+newtype Threshold = Threshold { unThreshold :: Integer }
+    deriving Num
 
 -- | A data source is the Druid equivalent of a database table. However, a
 -- query can also masquerade as a data source, providing subquery-like
 -- functionality. Query data sources are currently supported only by GroupBy
 -- queries.
-data DataSource =
-    DataSourceString { _dataSourceString :: Text }
+newtype DataSource = DataSource { unDataSource :: Text }
+  deriving IsString
 
 
 -- | The granularity field determines how data gets bucketed across the time
@@ -270,8 +271,6 @@ data Interval = Interval
     , _intervalEnd   :: UTCTime
     }
 
-data Metric
-
 -- * Instances
 
 instance ToJSON Query where
@@ -381,7 +380,7 @@ instance ToJSON ArithmeticFunction where
     toJSON AQuot  = "quotient"
 
 instance ToJSON DataSource where
-    toJSON DataSourceString{..} = String _dataSourceString
+    toJSON (DataSource str) = String str
 
 instance ToJSON Granularity where
     toJSON GranularityAll           = "all"
