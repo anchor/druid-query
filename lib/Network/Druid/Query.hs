@@ -94,7 +94,7 @@ data Query
     | QueryGroupBy
 
 newtype Threshold = Threshold { unThreshold :: Integer }
-    deriving Num
+    deriving (Num, ToJSON)
 
 -- | A data source is the Druid equivalent of a database table. However, a
 -- query can also masquerade as a data source, providing subquery-like
@@ -277,6 +277,18 @@ instance ToJSON Query where
     toJSON QueryTimeSeries{..} = object $
         [ "queryType"    .= String "timeseries"
         , "granularity"  .= toJSON _queryGranularity
+        , "dataSource"   .= toJSON _queryDataSource
+        , "aggregations" .= toJSON _queryAggregations
+        , "intervals"    .= toJSON _queryIntervals
+        ]
+        <> fmap ("postAggregations" .=) (maybeToList _queryPostAggregations)
+        <> fmap ("filter" .=) (maybeToList _queryFilter)
+    toJSON QueryTopN{..} = object $
+        [ "queryType"    .= String "topN"
+        , "dimension"    .= toJSON _queryDimension
+        , "threshold"    .= toJSON _queryThreshold
+        , "granularity"  .= toJSON _queryGranularity
+        , "metric"       .= toJSON _queryMetric
         , "dataSource"   .= toJSON _queryDataSource
         , "aggregations" .= toJSON _queryAggregations
         , "intervals"    .= toJSON _queryIntervals

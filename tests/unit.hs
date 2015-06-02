@@ -179,40 +179,37 @@ topNQueryV = [aesonQQ|
     }
   ],
   "intervals": [
-    "2013-08-31T00:00:00.000/2013-09-03T00:00:00.000"
+    "2013-08-31T00:00:00/2013-09-03T00:00:00"
   ]
 }
 |]
 
 topNQueryQ :: Query
 topNQueryQ = QueryTopN
-    { _queryDataSource = "sample_datasource"
+    { _queryDataSource = "sample_data"
     , _queryDimension = "sample_dim"
-    , _queryGranularity = GranularityDay
+    , _queryGranularity = GranularityAll
     , _queryThreshold = 5
     , _queryMetric = "count"
     , _queryFilter = Just $ FilterAnd
-        [ FilterSelector "sample_dimension1" "sample_value1"
-        , FilterOr
-            [ FilterSelector "sample_dimension2" "sample_value2"
-            , FilterSelector "sample_dimension3" "sample_value3"
-            ]
+        [ FilterSelector "dim1" "some_value"
+        , FilterSelector "dim2" "some_other_val"
         ]
     , _queryAggregations =
-        [ AggregationLongSum "sample_name1" "sample_fieldName1"
-        , AggregationDoubleSum "sample_name2" "sample_fieldName2"
+        [ AggregationLongSum "count" "count"
+        , AggregationDoubleSum "some_metric" "some_metric"
         ]
     , _queryPostAggregations = Just
         [ PostAggregationArithmetic
             "sample_divide"
             ADiv
-            [ PostAggregationFieldAccess "sample_name1" "sample_fieldName1"
-            , PostAggregationFieldAccess "sample_name2" "sample_fieldName2"
+            [ PostAggregationFieldAccess "some_metric" "some_metric"
+            , PostAggregationFieldAccess "count" "count"
             ]
             Nothing
         ]
     , _queryIntervals =
-        [ Interval [utcIso8601| 2012-01-01 |] [utcIso8601| 2012-01-03 |] ]
+        [ Interval [utcIso8601| 2013-08-31 |] [utcIso8601| 2013-09-03 |] ]
     }
  
 groupByQueryV :: Value
