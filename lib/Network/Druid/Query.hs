@@ -32,6 +32,7 @@ module Network.Druid.Query
     Having(..),
     OrderByColumnSpec(..),
     Direction(..),
+    Bound(..),
 ) where
 
 import Data.Aeson
@@ -103,6 +104,16 @@ data Query
         , _queryLimitSpec        :: Maybe LimitSpec
         , _queryHaving           :: Maybe Having
         }
+    -- | Time boundary queries return the earliest and latest data points of a
+    -- data set. '_queryBound' defaults to both if not set.'
+    | QueryTimeBoundary
+        { _queryDataSource :: DataSource
+        , _queryBound      :: Maybe Bound
+        }
+
+-- | Set to 'MaxTime' or 'MinTime' to return only the latest or earliest
+-- timestamp.
+data Bound = MaxTime | MinTime
 
 -- | The limitSpec field provides the functionality to sort and limit the set
 -- of results from a groupBy query. If you group by a single dimension and are
@@ -362,6 +373,15 @@ instance ToJSON Query where
         <> fmap ("filter"           .= ) (maybeToList _queryFilter)
         <> fmap ("limitSpec"        .= ) (maybeToList _queryLimitSpec)
         <> fmap ("having"           .= ) (maybeToList _queryHaving)
+    toJSON QueryTimeBoundary{..} = object $
+        [ "queryType"    .= String "timeBoundary"
+        , "dataSource"   .= toJSON _queryDataSource
+        ]
+        <> fmap ("bound" .=) (maybeToList _queryBound)
+
+instance ToJSON Bound where
+    toJSON MaxTime = "maxTime"
+    toJSON MinTime = "minTime"
 
 instance ToJSON Having where
     toJSON HavingEqualTo{..} = object $

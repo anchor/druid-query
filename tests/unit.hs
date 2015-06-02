@@ -324,6 +324,20 @@ groupByQueryQ = QueryGroupBy
     , _queryHaving = Just $ HavingGreaterThan "total_usage" 100
     }
  
+timeBoundaryQueryV :: Value
+timeBoundaryQueryV = [aesonQQ|
+{
+   "queryType" : "timeBoundary",
+   "dataSource" : "sample_datasource",
+   "bound" : "maxTime"
+}
+|]
+
+timeBoundaryQueryQ :: Query
+timeBoundaryQueryQ = QueryTimeBoundary
+    { _queryDataSource = "sample_datasource"
+    , _queryBound = Just MaxTime
+    }
 
 suite :: Spec
 suite = 
@@ -337,7 +351,8 @@ suite =
         it "has correct output for known GroupBy" $ 
             compareJSON groupByQueryQ groupByQueryV
             
-        it "has correct output for many combinations"  pending
+        it "has correct output for known TimeBoundary" $
+            compareJSON timeBoundaryQueryQ timeBoundaryQueryV
 
   where
     compareJSON a b = diff (toJSON a) b `shouldBe` Patch []
