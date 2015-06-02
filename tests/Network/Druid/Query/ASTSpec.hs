@@ -10,20 +10,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 
-module Main where
+module Network.Druid.Query.ASTSpec where
 
 import Test.Hspec
-import Test.Hspec.QuickCheck
-import Test.QuickCheck
 import Data.Aeson
 import Data.Aeson.QQ
 import Data.Aeson.Diff
 import Data.Time.QQ
 
-import Network.Druid.Query
-
-main :: IO ()
-main = hspec suite
+import Network.Druid.Query.AST
 
 -- * Example queries
 
@@ -339,8 +334,8 @@ timeBoundaryQueryQ = QueryTimeBoundary
     , _queryBound = Just MaxTime
     }
 
-suite :: Spec
-suite = 
+spec :: Spec
+spec = 
     describe "ToJSON for Query" $ do
         it "has correct output for known TimeSeries" $
             compareJSON timeSeriesQueryQ timeSeriesQueryV

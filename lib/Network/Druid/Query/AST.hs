@@ -11,9 +11,11 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 
-module Network.Druid.Query
+-- | This module provides an AST for druid's query language that has ToJSON
+-- instances for actually building these queries.
+module Network.Druid.Query.AST
 (
-    -- * Query ADT
+    -- * Query AST
     Query(..),
     Threshold(..),
     DataSource(..),
