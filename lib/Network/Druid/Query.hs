@@ -27,13 +27,15 @@ module Network.Druid.Query
     PostAggregationOrdering(..),
     Interval(..),
     MetricName(..),
-    UTCTime(..)
+    UTCTime(..),
+    LimitSpec(..),
+    Having(..),
+    OrderByColumnSpec(..),
+    Direction(..),
 ) where
 
-import Control.Applicative
 import Data.Aeson
 import Data.Maybe
-import Data.Bifunctor
 import Data.Monoid
 import Data.Time.Locale.Compat(defaultTimeLocale)
 import Data.Scientific (Scientific (..))
@@ -42,7 +44,6 @@ import Data.Text (Text)
 import Data.Time.Clock(UTCTime(..))
 import qualified Data.Text as T
 import Data.Time.Format(formatTime)
-import Data.Time.ISO8601(formatISO8601Millis)
 
 -- | Druid has numerous query types for various use cases. Queries are composed
 -- of various JSON properties and Druid has different types of queries for
@@ -92,6 +93,61 @@ data Query
     -- groupBy over a single dimension, please look at TopN queries. The
     -- performance for that use case is also substantially better.
     | QueryGroupBy
+        { _queryDataSource       :: DataSource
+        , _queryGranularity      :: Granularity
+        , _queryFilter           :: Maybe Filter
+        , _queryAggregations     :: [Aggregation]
+        , _queryPostAggregations :: Maybe [PostAggregation]
+        , _queryIntervals        :: [Interval]
+        , _queryDimensions       :: [Dimension]
+        , _queryLimitSpec        :: Maybe LimitSpec
+        , _queryHaving           :: Maybe Having
+        }
+
+-- | The limitSpec field provides the functionality to sort and limit the set
+-- of results from a groupBy query. If you group by a single dimension and are
+-- ordering by a single metric, we highly recommend using 'QueryTopN' instead.
+-- The performance will be substantially better. Available options are:
+data LimitSpec = LimitSpecDefault
+    { _limitSpecLimit :: Integer
+    , _limitSpecColumns :: [OrderByColumnSpec]
+    }
+
+-- | OrderByColumnSpecs indicate how to do order by operations.
+data OrderByColumnSpec
+    = OrderByColumnSpecDirected
+        { _orderByColumnSpecDimension :: Dimension
+        , _orderByColumnSpecDirection :: Direction
+        }
+    | OrderByColumnSpecSimple
+        { _orderByColumnSpecDimension :: Dimension }
+
+data Direction = Ascending | Descending
+
+-- | A having clause is a JSON object identifying which rows from a groupBy
+-- query should be returned, by specifying conditions on aggregated values.
+--
+-- It is essentially the equivalent of the HAVING clause in SQL.
+data Having
+    = HavingEqualTo
+        { _havingAggregation :: MetricName
+        , _havingValue       :: Integer
+        }
+    | HavingGreaterThan
+        { _havingAggregation :: MetricName
+        , _havingValue       :: Integer
+        }
+    | HavingLessThan
+        { _havingAggregation :: MetricName
+        , _havingValue       :: Integer
+        }
+    | HavingAnd
+        { _havingSpecs       :: [Having] }
+    | HavingOr
+        { _havingSpecs       :: [Having] }
+    | HavingNot
+        { _havingSpec        :: Having }
+
 
 newtype Threshold = Threshold { unThreshold :: Integer }
     deriving (Num, ToJSON)
@@ -226,8 +282,7 @@ data PostAggregation
     -- fieldName refers to the output name of the aggregator given in the
     -- aggregations portion of the query.
     | PostAggregationFieldAccess
-        { _postAggregationName      :: OutputName
-        , _postAggregationFieldName :: OutputName }
+        { _postAggregationFieldName :: OutputName }
     -- | The constant post-aggregator always returns the specified value.
     | PostAggregationConstant
         { _postAggregationName  :: OutputName
@@ -281,8 +336,8 @@ instance ToJSON Query where
         , "aggregations" .= toJSON _queryAggregations
         , "intervals"    .= toJSON _queryIntervals
         ]
-        <> fmap ("postAggregations" .=) (maybeToList _queryPostAggregations)
-        <> fmap ("filter" .=) (maybeToList _queryFilter)
+        <> fmap ("postAggregations" .= ) (maybeToList _queryPostAggregations)
+        <> fmap ("filter"           .= ) (maybeToList _queryFilter)
     toJSON QueryTopN{..} = object $
         [ "queryType"    .= String "topN"
         , "dimension"    .= toJSON _queryDimension
@@ -293,8 +348,66 @@ instance ToJSON Query where
         , "aggregations" .= toJSON _queryAggregations
         , "intervals"    .= toJSON _queryIntervals
         ]
-        <> fmap ("postAggregations" .=) (maybeToList _queryPostAggregations)
-        <> fmap ("filter" .=) (maybeToList _queryFilter)
+        <> fmap ("postAggregations" .= ) (maybeToList _queryPostAggregations)
+        <> fmap ("filter"           .= ) (maybeToList _queryFilter)
+    toJSON QueryGroupBy{..} = object $
+        [ "queryType"    .= String "groupBy"
+        , "dimensions"   .= toJSON _queryDimensions
+        , "granularity"  .= toJSON _queryGranularity
+        , "dataSource"   .= toJSON _queryDataSource
+        , "aggregations" .= toJSON _queryAggregations
+        , "intervals"    .= toJSON _queryIntervals
+        ]
+        <> fmap ("postAggregations" .= ) (maybeToList _queryPostAggregations)
+        <> fmap ("filter"           .= ) (maybeToList _queryFilter)
+        <> fmap ("limitSpec"        .= ) (maybeToList _queryLimitSpec)
+        <> fmap ("having"           .= ) (maybeToList _queryHaving)
+
+instance ToJSON Having where
+    toJSON HavingEqualTo{..} = object $
+        [ "type"        .= String "equalTo"
+        , "aggregation" .= _havingAggregation
+        , "value"       .= _havingValue
+        ]
+    toJSON HavingGreaterThan{..} = object $
+        [ "type"        .= String "greaterThan"
+        , "aggregation" .= _havingAggregation
+        , "value"       .= _havingValue
+        ]
+    toJSON HavingLessThan{..} = object $
+        [ "type"        .= String "lessThan"
+        , "aggregation" .= _havingAggregation
+        , "value"       .= _havingValue
+        ]
+    toJSON HavingOr{..} = object $
+        [ "type"        .= String "or"
+        , "havingSpecs" .= _havingSpecs
+        ]
+    toJSON HavingAnd{..} = object $
+        [ "type"        .= String "and"
+        , "havingSpecs" .= _havingSpecs
+        ]
+    toJSON HavingNot{..} = object $
+        [ "type"        .= String "not"
+        , "havingSpec"  .= _havingSpec
+        ]
+    
+
+instance ToJSON LimitSpec where
+    toJSON LimitSpecDefault{..} = object $
+        [ "type"    .= String "default"
+        , "limit"   .= _limitSpecLimit
+        , "columns" .=  _limitSpecColumns
+        ]
+
+instance ToJSON OrderByColumnSpec where
+    toJSON OrderByColumnSpecSimple{..} = toJSON _orderByColumnSpecDimension
+    toJSON OrderByColumnSpecDirected{..} = object $
+        [ "dimension" .= _orderByColumnSpecDimension
+        , "direction" .= case _orderByColumnSpecDirection of
+                            Ascending -> String "ascending"
+                            Descending -> String "descending"
+        ]
 
 instance ToJSON Interval where
     toJSON Interval{..} =
@@ -361,7 +474,6 @@ instance ToJSON PostAggregation where
         <> fmap ("ordering" .=) (maybeToList _postAggregationOrdering)
     toJSON PostAggregationFieldAccess{..} = object $
         [ "type"      .= String "fieldAccess"
-        , "name"      .= _postAggregationName
         , "fieldName" .= _postAggregationFieldName
         ]
     toJSON PostAggregationConstant{..} = object $

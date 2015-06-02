@@ -63,12 +63,10 @@ timeSeriesQueryV = [aesonQQ|
          "type" : "arithmetic",
          "fields" : [
             {
-               "name" : "sample_name1",
                "type" : "fieldAccess",
                "fieldName" : "sample_fieldName1"
             },
             {
-               "name" : "sample_name2",
                "fieldName" : "sample_fieldName2",
                "type" : "fieldAccess"
             }
@@ -114,8 +112,8 @@ timeSeriesQueryQ = QueryTimeSeries
         [ PostAggregationArithmetic
             "sample_divide"
             ADiv
-            [ PostAggregationFieldAccess "sample_name1" "sample_fieldName1"
-            , PostAggregationFieldAccess "sample_name2" "sample_fieldName2"
+            [ PostAggregationFieldAccess "sample_fieldName1"
+            , PostAggregationFieldAccess "sample_fieldName2"
             ]
             Nothing
         ]
@@ -167,12 +165,10 @@ topNQueryV = [aesonQQ|
       "fields": [
         {
           "type": "fieldAccess",
-          "name": "some_metric",
           "fieldName": "some_metric"
         },
         {
           "type": "fieldAccess",
-          "name": "count",
           "fieldName": "count"
         }
       ]
@@ -203,8 +199,8 @@ topNQueryQ = QueryTopN
         [ PostAggregationArithmetic
             "sample_divide"
             ADiv
-            [ PostAggregationFieldAccess "some_metric" "some_metric"
-            , PostAggregationFieldAccess "count" "count"
+            [ PostAggregationFieldAccess "some_metric"
+            , PostAggregationFieldAccess "count"
             ]
             Nothing
         ]
@@ -267,7 +263,7 @@ groupByQueryV = [aesonQQ|
       "type" : "default"
    },
    "intervals" : [
-      "2012-01-01T00:00:00.000/2012-01-03T00:00:00.000"
+      "2012-01-01T00:00:00/2012-01-03T00:00:00"
    ],
    "having" : {
       "value" : 100,
@@ -295,6 +291,40 @@ groupByQueryV = [aesonQQ|
 }
 |]
 
+groupByQueryQ :: Query
+groupByQueryQ = QueryGroupBy
+    { _queryDataSource = "sample_datasource"
+    , _queryDimensions = ["country", "device"]
+    , _queryGranularity = GranularityDay
+    , _queryFilter = Just $ FilterAnd
+        [ FilterSelector "carrier" "AT&T"
+        , FilterOr
+            [ FilterSelector "make" "Apple"
+            , FilterSelector "make" "Samsung"
+            ]
+        ]
+    , _queryAggregations =
+        [ AggregationLongSum "total_usage" "user_count"
+        , AggregationDoubleSum "data_transfer" "data_transfer"
+        ]
+    , _queryPostAggregations = Just
+        [ PostAggregationArithmetic
+            "avg_usage"
+            ADiv
+            [ PostAggregationFieldAccess "data_transfer"
+            , PostAggregationFieldAccess "total_usage"
+            ]
+            Nothing
+        ]
+    , _queryIntervals =
+        [ Interval [utcIso8601| 2012-01-01 |] [utcIso8601| 2012-01-03 |] ]
+    , _queryLimitSpec = Just $
+        LimitSpecDefault 5000 [ OrderByColumnSpecSimple "country"
+                              , OrderByColumnSpecSimple "data_transfer"]
+    , _queryHaving = Just $ HavingGreaterThan "total_usage" 100
+    }
+ 
+
 suite :: Spec
 suite = 
     describe "ToJSON for Query" $ do
@@ -304,7 +334,9 @@ suite =
         it "has correct output for known TopN" $
             compareJSON topNQueryQ topNQueryV
 
-        it "has correct output for known GroupBy"  pending
+        it "has correct output for known GroupBy" $ 
+            compareJSON groupByQueryQ groupByQueryV
+            
         it "has correct output for many combinations"  pending
 
   where
