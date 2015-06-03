@@ -18,10 +18,10 @@ module Network.Druid.Query.AST
     -- * Query AST
     Query(..),
     Threshold(..),
-    DataSource(..),
+    DataSourceName(..),
     Granularity(..),
     Filter(..),
-    Dimension(..),
+    DimensionName(..),
     Aggregation(..),
     PostAggregation(..),
     NumericalValue(..),
@@ -29,6 +29,7 @@ module Network.Druid.Query.AST
     PostAggregationOrdering(..),
     Interval(..),
     MetricName(..),
+    OutputName(..),
     UTCTime(..),
     LimitSpec(..),
     Having(..),
@@ -56,7 +57,7 @@ data Query
     -- array of JSON objects where each object represents a value asked for by
     -- the timeseries query.
     = QueryTimeSeries
-        { _queryDataSource       :: DataSource
+        { _queryDataSourceName       :: DataSourceName
         , _queryGranularity      :: Granularity
         , _queryFilter           :: Maybe Filter
         , _queryAggregations     :: [Aggregation]
@@ -78,13 +79,13 @@ data Query
     -- will be 100%, and the ordering of the results after that is not
     -- guaranteed. TopNs can be made more accurate by increasing the threshold.
     | QueryTopN
-        { _queryDataSource       :: DataSource
+        { _queryDataSourceName       :: DataSourceName
         , _queryGranularity      :: Granularity
         , _queryFilter           :: Maybe Filter
         , _queryAggregations     :: [Aggregation]
         , _queryPostAggregations :: Maybe [PostAggregation]
         , _queryIntervals        :: [Interval]
-        , _queryDimension        :: Dimension
+        , _queryDimensionName        :: DimensionName
         , _queryThreshold        :: Threshold
         , _queryMetric           :: MetricName
         }
@@ -96,26 +97,28 @@ data Query
     -- groupBy over a single dimension, please look at TopN queries. The
     -- performance for that use case is also substantially better.
     | QueryGroupBy
-        { _queryDataSource       :: DataSource
+        { _queryDataSourceName       :: DataSourceName
         , _queryGranularity      :: Granularity
         , _queryFilter           :: Maybe Filter
         , _queryAggregations     :: [Aggregation]
         , _queryPostAggregations :: Maybe [PostAggregation]
         , _queryIntervals        :: [Interval]
-        , _queryDimensions       :: [Dimension]
+        , _queryDimensionNames       :: [DimensionName]
         , _queryLimitSpec        :: Maybe LimitSpec
         , _queryHaving           :: Maybe Having
         }
     -- | Time boundary queries return the earliest and latest data points of a
     -- data set. '_queryBound' defaults to both if not set.'
     | QueryTimeBoundary
-        { _queryDataSource :: DataSource
+        { _queryDataSourceName :: DataSourceName
         , _queryBound      :: Maybe Bound
         }
+  deriving (Eq, Show)
 
 -- | Set to 'MaxTime' or 'MinTime' to return only the latest or earliest
 -- timestamp.
 data Bound = MaxTime | MinTime
+  deriving (Eq, Show)
 
 -- | The limitSpec field provides the functionality to sort and limit the set
 -- of results from a groupBy query. If you group by a single dimension and are
@@ -125,17 +128,20 @@ data LimitSpec = LimitSpecDefault
     { _limitSpecLimit :: Integer
     , _limitSpecColumns :: [OrderByColumnSpec]
     }
+  deriving (Eq, Show)
 
 -- | OrderByColumnSpecs indicate how to do order by operations.
 data OrderByColumnSpec
     = OrderByColumnSpecDirected
-        { _orderByColumnSpecDimension :: Dimension
+        { _orderByColumnSpecDimensionName :: DimensionName
         , _orderByColumnSpecDirection :: Direction
         }
     | OrderByColumnSpecSimple
-        { _orderByColumnSpecDimension :: Dimension }
+        { _orderByColumnSpecDimensionName :: DimensionName }
+  deriving (Eq, Show)
 
 data Direction = Ascending | Descending
+  deriving (Eq, Show)
 
 -- | A having clause is a JSON object identifying which rows from a groupBy
 -- query should be returned, by specifying conditions on aggregated values.
@@ -160,17 +166,18 @@ data Having
         { _havingSpecs       :: [Having] }
     | HavingNot
         { _havingSpec        :: Having }
+  deriving (Eq, Show)
 
 
 newtype Threshold = Threshold { unThreshold :: Integer }
-    deriving (Num, ToJSON)
+    deriving (Num, ToJSON, Eq, Show)
 
 -- | A data source is the Druid equivalent of a database table. However, a
 -- query can also masquerade as a data source, providing subquery-like
 -- functionality. Query data sources are currently supported only by GroupBy
 -- queries.
-newtype DataSource = DataSource { unDataSource :: Text }
-  deriving IsString
+newtype DataSourceName = DataSourceName { unDataSourceName :: Text }
+  deriving (IsString, Eq, Show)
 
 
 -- | The granularity field determines how data gets bucketed across the time
@@ -186,6 +193,7 @@ data Granularity
     | GranularityThirtyMinute
     | GranularityHour
     | GranularityDay
+  deriving (Eq, Show)
 
 -- | A filter is a JSON object indicating which rows of data should be included
 -- in the computation for a query. It’s essentially the equivalent of the WHERE
@@ -196,33 +204,34 @@ data Filter
     -- be used as the base filters for more complex Boolean expressions of
     -- filters.
     = FilterSelector
-        { _selectorDimension :: Dimension
+        { _selectorDimensionName :: DimensionName
         , _selectorValue     :: Text
         }
     | FilterRegularExpression
-        { _selectorDimension :: Dimension
+        { _selectorDimensionName :: DimensionName
         , _selectorPattern   :: Text }
     | FilterJS
-        { _selectorDimension :: Dimension
+        { _selectorDimensionName :: DimensionName
         , _selectorFunction  :: JS }
     | FilterAnd { _selectorFields :: [Filter] }
     | FilterOr  { _selectorFields :: [Filter] }
     | FilterNot { _selectorField :: Filter }
+  deriving (Eq, Show)
 
 -- | TODO: Undocumented
-newtype Dimension = Dimension { unDimension :: Text }
-    deriving (IsString, ToJSON)
+newtype DimensionName = DimensionName { unDimensionName :: Text }
+    deriving (IsString, ToJSON, Eq, Show)
 
 newtype JS = JS { unJS :: Text }
-    deriving (IsString, ToJSON)
+    deriving (IsString, ToJSON, Eq, Show)
 
 -- | TODO: Undocumented
 newtype OutputName = OutputName { unOutputName :: Text }
-    deriving (IsString, ToJSON)
+    deriving (IsString, ToJSON, Eq, Show)
 
 -- | TODO: Undocumented
 newtype MetricName = MetricName { unMetricName :: Text }
-    deriving (IsString, ToJSON)
+    deriving (IsString, ToJSON, Eq, Show)
 
 -- | Aggregations are specifications of processing over metrics available in
 -- Druid. Available aggregations are:
@@ -259,6 +268,7 @@ data Aggregation
         { _aggregationFilter     :: Filter
         , _aggregationAggregator :: Aggregation
         }
+  deriving (Eq, Show)
 
 -- | Post-aggregations are specifications of processing that should happen on
 -- aggregated values as they come out of Druid. If you include a post
@@ -311,9 +321,10 @@ data PostAggregation
     -- wrap a hyperUnique object such that it can be used in post aggregations.
     | PostAggregationHyperUniqueCardinality
         { _postAggregationFieldName :: OutputName }
+  deriving (Eq, Show)
 
 newtype NumericalValue = NumericalValue { unNumericalValue :: Scientific }
-    deriving Num
+    deriving (Num, Eq, Show)
 
 -- | An arithmetic function as supported by 'PostAggregation'
 data ArithmeticFunction
@@ -327,17 +338,22 @@ data ArithmeticFunction
     | ADiv
     -- | Quotient
     | AQuot
+  deriving (Eq, Show)
 
 -- | If PostAggregationOrderingNull is specified, the default floating point
 -- ordering is used. 'PostAggregationOrderingNumericFirst' ordering always
 -- returns finite values first, followed by NaN, and infinite values last.
 data PostAggregationOrdering
     = PostAggregationOrderingNull | PostAggregationOrderingNumericFirst
+  deriving (Eq, Show)
+
 
 data Interval = Interval
     { _intervalStart :: UTCTime
     , _intervalEnd   :: UTCTime
     }
+  deriving (Eq, Show)
+
 
 -- * Instances
 
@@ -345,7 +361,7 @@ instance ToJSON Query where
     toJSON QueryTimeSeries{..} = object $
         [ "queryType"    .= String "timeseries"
         , "granularity"  .= toJSON _queryGranularity
-        , "dataSource"   .= toJSON _queryDataSource
+        , "dataSource"   .= toJSON _queryDataSourceName
         , "aggregations" .= toJSON _queryAggregations
         , "intervals"    .= toJSON _queryIntervals
         ]
@@ -353,11 +369,11 @@ instance ToJSON Query where
         <> fmap ("filter"           .= ) (maybeToList _queryFilter)
     toJSON QueryTopN{..} = object $
         [ "queryType"    .= String "topN"
-        , "dimension"    .= toJSON _queryDimension
+        , "dimension"    .= toJSON _queryDimensionName
         , "threshold"    .= toJSON _queryThreshold
         , "granularity"  .= toJSON _queryGranularity
         , "metric"       .= toJSON _queryMetric
-        , "dataSource"   .= toJSON _queryDataSource
+        , "dataSource"   .= toJSON _queryDataSourceName
         , "aggregations" .= toJSON _queryAggregations
         , "intervals"    .= toJSON _queryIntervals
         ]
@@ -365,9 +381,9 @@ instance ToJSON Query where
         <> fmap ("filter"           .= ) (maybeToList _queryFilter)
     toJSON QueryGroupBy{..} = object $
         [ "queryType"    .= String "groupBy"
-        , "dimensions"   .= toJSON _queryDimensions
+        , "dimensions"   .= toJSON _queryDimensionNames
         , "granularity"  .= toJSON _queryGranularity
-        , "dataSource"   .= toJSON _queryDataSource
+        , "dataSource"   .= toJSON _queryDataSourceName
         , "aggregations" .= toJSON _queryAggregations
         , "intervals"    .= toJSON _queryIntervals
         ]
@@ -377,7 +393,7 @@ instance ToJSON Query where
         <> fmap ("having"           .= ) (maybeToList _queryHaving)
     toJSON QueryTimeBoundary{..} = object $
         [ "queryType"    .= String "timeBoundary"
-        , "dataSource"   .= toJSON _queryDataSource
+        , "dataSource"   .= toJSON _queryDataSourceName
         ]
         <> fmap ("bound" .=) (maybeToList _queryBound)
 
@@ -423,9 +439,9 @@ instance ToJSON LimitSpec where
         ]
 
 instance ToJSON OrderByColumnSpec where
-    toJSON OrderByColumnSpecSimple{..} = toJSON _orderByColumnSpecDimension
+    toJSON OrderByColumnSpecSimple{..} = toJSON _orderByColumnSpecDimensionName
     toJSON OrderByColumnSpecDirected{..} = object $
-        [ "dimension" .= _orderByColumnSpecDimension
+        [ "dimension" .= _orderByColumnSpecDimensionName
         , "direction" .= case _orderByColumnSpecDirection of
                             Ascending -> String "ascending"
                             Descending -> String "descending"
@@ -525,8 +541,8 @@ instance ToJSON ArithmeticFunction where
     toJSON ADiv   = "/"
     toJSON AQuot  = "quotient"
 
-instance ToJSON DataSource where
-    toJSON (DataSource str) = String str
+instance ToJSON DataSourceName where
+    toJSON (DataSourceName str) = String str
 
 instance ToJSON Granularity where
     toJSON GranularityAll           = "all"
@@ -540,17 +556,17 @@ instance ToJSON Granularity where
 instance ToJSON Filter where
     toJSON FilterSelector{..} = object $
         [ "type"      .= String "selector"
-        , "dimension" .= _selectorDimension
+        , "dimension" .= _selectorDimensionName
         , "value"     .= _selectorValue
         ]
     toJSON FilterRegularExpression{..} = object $
         [ "type"      .= String "regex"
-        , "dimension" .= _selectorDimension
+        , "dimension" .= _selectorDimensionName
         , "pattern"   .= _selectorPattern
         ]
     toJSON FilterJS{..} = object $
         [ "type"      .= String "javascript"
-        , "dimension" .= _selectorDimension
+        , "dimension" .= _selectorDimensionName
         , "function"  .= _selectorFunction
         ]
     toJSON FilterAnd{..} = object $

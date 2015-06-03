@@ -90,7 +90,7 @@ timeSeriesQueryV = [aesonQQ|
 
 timeSeriesQueryQ :: Query
 timeSeriesQueryQ = QueryTimeSeries
-    { _queryDataSource = "sample_datasource"
+    { _queryDataSourceName = "sample_datasource"
     , _queryGranularity = GranularityDay
     , _queryFilter = Just $ FilterAnd
         [ FilterSelector "sample_dimension1" "sample_value1"
@@ -177,8 +177,8 @@ topNQueryV = [aesonQQ|
 
 topNQueryQ :: Query
 topNQueryQ = QueryTopN
-    { _queryDataSource = "sample_data"
-    , _queryDimension = "sample_dim"
+    { _queryDataSourceName = "sample_data"
+    , _queryDimensionName = "sample_dim"
     , _queryGranularity = GranularityAll
     , _queryThreshold = 5
     , _queryMetric = "count"
@@ -288,8 +288,8 @@ groupByQueryV = [aesonQQ|
 
 groupByQueryQ :: Query
 groupByQueryQ = QueryGroupBy
-    { _queryDataSource = "sample_datasource"
-    , _queryDimensions = ["country", "device"]
+    { _queryDataSourceName = "sample_datasource"
+    , _queryDimensionNames = ["country", "device"]
     , _queryGranularity = GranularityDay
     , _queryFilter = Just $ FilterAnd
         [ FilterSelector "carrier" "AT&T"
@@ -330,7 +330,7 @@ timeBoundaryQueryV = [aesonQQ|
 
 timeBoundaryQueryQ :: Query
 timeBoundaryQueryQ = QueryTimeBoundary
-    { _queryDataSource = "sample_datasource"
+    { _queryDataSourceName = "sample_datasource"
     , _queryBound = Just MaxTime
     }
 

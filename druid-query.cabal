@@ -21,17 +21,27 @@ library
   default-language:    Haskell2010
   hs-source-dirs:      lib
   exposed-modules:     Network.Druid.Query.AST
+                     , Network.Druid.Query.DSL
   build-depends:       base >=4.7 && <4.8
                      , aeson
                      , scientific
+                     , unordered-containers
                      , bytestring
+                     , exceptions
+                     , pipes
+                     , lens-family-core
                      , pipes-http
+                     , pipes-bytestring
                      , time-locale-compat
+                     , transformers
+                     , mtl
                      , pipes-aeson
                      , time
+                     , free
                      , text
                      , unordered-containers
                      , vector
+                     , time-qq
 
 test-suite unit
   type:                exitcode-stdio-1.0
@@ -41,6 +51,7 @@ test-suite unit
   build-depends:       base >=4.7 && <4.8
                      , aeson
                      , aeson-qq
+                     , pipes
                      , aeson-diff
                      , druid-query
                      , time-qq
