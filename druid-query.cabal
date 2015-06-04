@@ -35,7 +35,8 @@ library
                      , mtl
                      , time
                      , free
-                     , free
+                     , indexed-free
+                     , indexed
                      , text
                      , unordered-containers
 
@@ -52,6 +53,8 @@ test-suite unit
                      , pipes
                      , aeson-diff
                      , druid-query
+                     , indexed-free
+                     , indexed
                      , time-qq
                      , QuickCheck
                      , hspec

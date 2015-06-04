@@ -13,10 +13,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE GADTSyntax #-}
-{-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeFamilies #-}
 
 
 module Network.Druid.Query.DSL
@@ -25,18 +29,20 @@ where
 import Network.Druid.Query.AST
 
 import Data.Text(Text)
-import Control.Monad.Free
 import Data.Aeson
+import GHC.Exts(Constraint)
 import qualified Data.Text as T
 import qualified Data.ByteString.Lazy as LBS
 import Data.Monoid
 import qualified Data.HashMap.Strict as HM
 import Control.Applicative
 import Control.Monad.State.Strict
+import Data.Functor.Indexed
 import Data.Scientific
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
 import Data.ByteString(ByteString)
+import Control.Monad.Indexed.Free
 
 class DataSource ds where
     dataSourceName :: ds -> Text
@@ -54,16 +60,24 @@ class Metric m => HasMetric ds m
 class MetricVar v where
     metricVarName :: v -> Text
 
-data QueryL ds a where
-    QueryLFilter :: FilterL ds -> a -> QueryL ds a
-    QueryLAggregation :: Aggregation -> a -> QueryL ds a
-    QueryLPostAggregation :: PostAggregation -> a -> QueryL ds a
-  deriving Functor
+data QueryL ds st st' a where
+    QueryLFilter :: FilterL ds -> a -> QueryL ds st st' a
+    QueryLAggregation :: Aggregation -> a -> QueryL ds st st' a
+    QueryLPostAggregation :: PostAggregationL ds -> a -> QueryL ds st st' a
 
-newtype FilterL ds = FilterL { unFilterL :: Filter }
+instance IxFunctor (QueryL ds) where
+    imap f (QueryLFilter filt a) = QueryLFilter filt (f a)
+    imap f (QueryLAggregation agg a) = QueryLAggregation agg (f a)
+    imap f (QueryLPostAggregation agg a) = QueryLPostAggregation agg (f a)
+
+
+newtype FilterL ds
+    = FilterL { unFilterL :: Filter }
   deriving ToJSON
 
-type QueryF ds = Free (QueryL ds)
+data PostAggregationL ds = PostAggregationL Text PostAggregation
+
+type QueryF ds = IxFree (QueryL ds)
 
 newtype BoundMetric ds var = BoundMetric Text
 
@@ -83,6 +97,9 @@ instance Monoid FlattenedQuery where
         FlattenedQuery (agg1 <> agg2)
                        (pagg1 <> pagg2)
                        (joinFilters filt1 filt2)
+
+data a :| b
+infixr 9 :| 
 
 joinFilters :: Maybe Filter -> Maybe Filter -> Maybe Filter
 joinFilters (Just filt1) (Just filt2)
@@ -109,7 +126,7 @@ groupByQuery
     -> [SomeDimension ds]
     -> Granularity
     -> [Interval]
-    -> QueryF ds a
+    -> QueryF ds st st' a
     -> Query
 groupByQuery ds dimensions granularity intervals qf = QueryGroupBy
     { _queryDataSourceName   = DataSourceName $ dataSourceName ds
@@ -126,21 +143,21 @@ groupByQuery ds dimensions granularity intervals qf = QueryGroupBy
   where
     FlattenedQuery{..} = flattenQuery qf
 
-flattenQuery :: QueryF ds a -> FlattenedQuery
+flattenQuery :: QueryF ds st st' a -> FlattenedQuery
 flattenQuery = mconcat . go
   where
-    go :: QueryF ds a -> [FlattenedQuery]
+    go :: QueryF ds st st' a -> [FlattenedQuery]
     go (Pure _) = []
     go (Free x) = case x of
         QueryLFilter (FilterL filt) k ->
             mempty { _flattenedQueryFilter = Just filt } : go k
         QueryLAggregation agg k ->
             mempty { _flattenedQueryAggregations = [agg] } : go k
-        QueryLPostAggregation pagg k ->
+        QueryLPostAggregation (PostAggregationL _ pagg) k ->
             mempty { _flattenedQueryPostAggregations = Just [pagg] } : go k
 
-applyFilter :: FilterL ds -> QueryF ds ()
-applyFilter filt = liftF $ QueryLFilter filt ()
+applyFilter :: FilterL ds -> QueryF ds st st ()
+applyFilter filt = iliftFree $ QueryLFilter filt ()
 
 filterAnd :: [FilterL ds] -> FilterL ds
 filterAnd = FilterL . FilterAnd . fmap unFilterL
@@ -154,20 +171,55 @@ filterSelector dimension =
 
 -- * Aggregators
 
-longSum :: (MetricVar v, HasMetric ds m) => v -> m -> QueryF ds (BoundMetric ds v)
-longSum var metric = liftF $ QueryLAggregation
-    (AggregationLongSum (OutputName $ metricVarName var)
+data LongSum m = LongSum m
+
+longSum :: HasMetric ds m => m -> QueryF ds st (LongSum m :| st) ()
+longSum metric = iliftFree $ QueryLAggregation
+    (AggregationLongSum (OutputName $ boundName (LongSum metric))
                         (MetricName $ metricName metric))
-    (BoundMetric $ metricVarName var)
+    ()
 
-doubleSum :: (MetricVar v, HasMetric ds m) => v -> m -> QueryF ds (BoundMetric ds v)
-doubleSum var metric = liftF $ QueryLAggregation
-    (AggregationDoubleSum (OutputName $ metricVarName var)
+data DoubleSum m = DoubleSum m
+
+doubleSum :: (HasMetric ds m) => m -> QueryF ds st (DoubleSum m :| st) ()
+doubleSum metric = iliftFree $ QueryLAggregation
+    (AggregationDoubleSum (OutputName $ boundName (DoubleSum metric))
                           (MetricName $ metricName metric))
-    (BoundMetric $ metricVarName var)
+    ()
+
+data PostAggVar
+
+type family IsBound x xs :: Constraint where
+    IsBound x (x :| xs) = ()
+    IsBound x (y :| xs) = IsBound x xs
+
+class Metric m => Bindable agg m where
+    boundName :: agg m -> Text
+
+instance Metric m => Bindable DoubleSum m where
+    boundName (DoubleSum m) = "double_sum_" <> metricName m
+
+instance Metric m => Bindable LongSum m where
+    boundName (LongSum m) = "long_sum_" <> metricName m
+
+deref :: (Bindable agg m, IsBound (agg m) st) => agg m -> QueryF ds st st (PostAggregationL ds)
+deref agg = return $
+    PostAggregationL (boundName agg)
+                     (PostAggregationFieldAccess $ OutputName $ boundName agg)
+
+postAggregate :: PostAggregationL ds -> QueryF ds st st ()
+postAggregate pagg = iliftFree $ QueryLPostAggregation pagg ()
+
+(|+|) :: PostAggregationL ds -> PostAggregationL ds -> PostAggregationL ds
+(PostAggregationL n1 pa1) |+| (PostAggregationL n2 pa2) =
+    let on = "pa_sum_" <> n1 <> "_plus_" <> n2
+    in PostAggregationL on $ PostAggregationArithmetic (OutputName on)
+                                                       APlus
+                                                       [pa1, pa2]
+                                                       Nothing
 
 
-count :: MetricVar v => v -> QueryF ds (BoundMetric ds v)
-count var = liftF $ QueryLAggregation
+count :: MetricVar v => v -> QueryF ds st st' (BoundMetric ds v)
+count var = iliftFree $ QueryLAggregation
     (AggregationCount (OutputName $ metricVarName var))
     (BoundMetric $ metricVarName var)
