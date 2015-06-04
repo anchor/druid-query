@@ -15,7 +15,6 @@
 module Network.Druid.Query.DSLSpec where
 
 import Control.Applicative
-import Pipes
 import Data.Aeson
 import Data.Time.QQ
 import Data.Scientific
@@ -39,10 +38,11 @@ instance MetricVar Count where
 
 main :: IO ()
 main =  do
-    groupBy "http://localhost:8084/druid/v2/"
+    let q = groupByQuery
                  Nagios
                  [SomeDimension NagiosMetric]
                  GranularityDay
-                 [Interval [utcIso8601| 2015-04-08 |] [utcIso8601| 2015-06-09 |]]
-                 (count Count) $ \cnt look pipe ->
-        runEffect $ pipe >-> (await >>= \v -> liftIO $ print $ look cnt v)
+                 [Interval [utcIso8601| 2015-05-08 |] [utcIso8601| 2015-05-10 |]]
+                 (count Count)
+
+    runQuery "http://localhost:8084/druid/v2/" q >>= print

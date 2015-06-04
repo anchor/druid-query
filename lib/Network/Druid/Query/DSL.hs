@@ -28,16 +28,15 @@ import Data.Text(Text)
 import Control.Monad.Free
 import Data.Aeson
 import qualified Data.Text as T
-import Data.Scientific
+import qualified Data.ByteString.Lazy as LBS
 import Data.Monoid
 import qualified Data.HashMap.Strict as HM
+import Control.Applicative
 import Control.Monad.State.Strict
-import Pipes
-import Pipes.HTTP
-import qualified Pipes.Aeson.Unchecked as P
+import Data.Scientific
+import Network.HTTP.Client
+import Network.HTTP.Client.TLS
 import Data.ByteString(ByteString)
-import Lens.Family((^.))
-
 
 class DataSource ds where
     dataSourceName :: ds -> Text
@@ -58,6 +57,7 @@ class MetricVar v where
 data QueryL ds a where
     QueryLFilter :: FilterL ds -> a -> QueryL ds a
     QueryLAggregation :: Aggregation -> a -> QueryL ds a
+    QueryLPostAggregation :: PostAggregation -> a -> QueryL ds a
   deriving Functor
 
 newtype FilterL ds = FilterL { unFilterL :: Filter }
@@ -69,70 +69,39 @@ newtype BoundMetric ds var = BoundMetric Text
 
 data SomeDimension ds = forall a. HasDimension ds a => SomeDimension a
 
-data FlattenedQuery = FlattenedQuery {
-    _flattenedQueryAggregations :: [Aggregation]
-}
+data FlattenedQuery = FlattenedQuery
+    { _flattenedQueryAggregations     :: [Aggregation]
+    , _flattenedQueryPostAggregations :: Maybe [PostAggregation]
+    , _flattenedQueryFilter           :: Maybe Filter
+    }
   deriving Show
 
 instance Monoid FlattenedQuery where
-    mempty = FlattenedQuery mempty
-    (FlattenedQuery a) `mappend` (FlattenedQuery b) =
-        FlattenedQuery (a <> b)
+    mempty = FlattenedQuery mempty mempty Nothing
+    mappend (FlattenedQuery agg1 pagg1 filt1)
+            (FlattenedQuery agg2 pagg2 filt2) =
+        FlattenedQuery (agg1 <> agg2)
+                       (pagg1 <> pagg2)
+                       (joinFilters filt1 filt2)
 
--- * Decoding
+joinFilters :: Maybe Filter -> Maybe Filter -> Maybe Filter
+joinFilters (Just filt1) (Just filt2)
+    = Just $ FilterAnd [filt1, filt2]
+joinFilters filt1 filt2
+    = filt1 <|> filt2
 
-class DruidDecode src dst where
-
--- | Fundep is just to help type inference.
-class CanLookup ds key val | key -> val where
-    doLookup :: ds -> key -> Object -> val
-
-instance CanLookup ds (BoundMetric ds var) Scientific where
-    doLookup _ (BoundMetric name) hm = do
-        let e = HM.lookup "event" hm
-        case e of
-            Nothing -> error "no key 'event'"
-            Just (Object hm') ->
-                case HM.lookup name hm' of
-                    Nothing -> error $ "no key: " <> T.unpack name
-                    Just (Number n) -> n
-                    Just x -> error $ "Not a number: " <> show x
-            Just x -> error $ "Was not a JSON Object: " <> show x
-            
-
-groupBy
-    :: DataSource ds
-    => String
-    -> ds
-    -> [SomeDimension ds]
-    -> Granularity
-    -> [Interval]
-    -> QueryF ds a
-    -> (a -> (CanLookup ds key val => key -> Object -> val) -> Producer Object IO () -> IO ())
-    -> IO ()
-groupBy uri ds dimensions granularity intervals qf user_f = do
-    let query = groupByQuery ds dimensions granularity intervals qf
-    val <- go qf
+runQuery :: String -> Query -> IO (Either String Value)
+runQuery uri query = do
     req <- parseUrl uri
     let req' = req { method = "POST"
                    , requestBody = RequestBodyLBS (encode query)
                    }
 
     withManager tlsManagerSettings $ \m ->
-        withHTTP req' m $ \resp -> do
-            user_f val (lookupVal ds) (void $ responseBody resp ^. P.decoded)
-            -- let prod = (view (P.decoded undefined) wat) :: Producer Value IO ()
-            -- thing <- (evalStateT (void P.decode) wat) :: Producer Value IO ()
-            --user_f val (lookupVal ds) thing
-  where
-    lookupVal :: CanLookup ds key val => ds -> key -> Object ->  val
-    lookupVal = doLookup 
-
-    go (Pure r) = return r
-    -- Just traverse to the end
-    go (Free x) = case x of
-        QueryLAggregation _ k -> go k
-        QueryLFilter      _ k -> go k
+        withResponse req' m $ \resp -> do
+            -- Do not stream, Druid will not stream, plus we're dealing with
+            -- JSON so let's just not go there.
+            eitherDecode . LBS.fromChunks <$> brConsume (responseBody resp)
 
 groupByQuery
     :: DataSource ds
@@ -143,16 +112,16 @@ groupByQuery
     -> QueryF ds a
     -> Query
 groupByQuery ds dimensions granularity intervals qf = QueryGroupBy
-    { _queryDataSourceName = DataSourceName $ dataSourceName ds
-    , _queryDimensionNames =
+    { _queryDataSourceName   = DataSourceName $ dataSourceName ds
+    , _queryDimensionNames   =
         fmap (\(SomeDimension d) -> DimensionName $ dimensionName d) dimensions
-    , _queryLimitSpec = Nothing
-    , _queryHaving = Nothing
-    , _queryGranularity = granularity
-    , _queryAggregations = _flattenedQueryAggregations
-    , _queryPostAggregations = Nothing
-    , _queryFilter = Nothing
-    , _queryIntervals = intervals
+    , _queryLimitSpec        = Nothing
+    , _queryHaving           = Nothing
+    , _queryGranularity      = granularity
+    , _queryAggregations     = _flattenedQueryAggregations
+    , _queryPostAggregations = _flattenedQueryPostAggregations
+    , _queryFilter           = _flattenedQueryFilter
+    , _queryIntervals        = intervals
     }
   where
     FlattenedQuery{..} = flattenQuery qf
@@ -163,10 +132,12 @@ flattenQuery = mconcat . go
     go :: QueryF ds a -> [FlattenedQuery]
     go (Pure _) = []
     go (Free x) = case x of
-        QueryLFilter _ k ->
-            go k
+        QueryLFilter (FilterL filt) k ->
+            mempty { _flattenedQueryFilter = Just filt } : go k
         QueryLAggregation agg k ->
             mempty { _flattenedQueryAggregations = [agg] } : go k
+        QueryLPostAggregation pagg k ->
+            mempty { _flattenedQueryPostAggregations = Just [pagg] } : go k
 
 applyFilter :: FilterL ds -> QueryF ds ()
 applyFilter filt = liftF $ QueryLFilter filt ()
@@ -174,18 +145,27 @@ applyFilter filt = liftF $ QueryLFilter filt ()
 filterAnd :: [FilterL ds] -> FilterL ds
 filterAnd = FilterL . FilterAnd . fmap unFilterL
 
+filterOr :: [FilterL ds] -> FilterL ds
+filterOr = FilterL . FilterOr . fmap unFilterL
+
 filterSelector :: HasDimension ds d => d -> Text -> FilterL ds
 filterSelector dimension =
     FilterL . FilterSelector (DimensionName $ dimensionName dimension)
 
 -- * Aggregators
 
-
-longSum :: (HasMetric ds m, MetricVar v) => m -> v -> QueryF ds (BoundMetric ds v)
-longSum metric var = liftF $ QueryLAggregation
+longSum :: (MetricVar v, HasMetric ds m) => v -> m -> QueryF ds (BoundMetric ds v)
+longSum var metric = liftF $ QueryLAggregation
     (AggregationLongSum (OutputName $ metricVarName var)
                         (MetricName $ metricName metric))
     (BoundMetric $ metricVarName var)
+
+doubleSum :: (MetricVar v, HasMetric ds m) => v -> m -> QueryF ds (BoundMetric ds v)
+doubleSum var metric = liftF $ QueryLAggregation
+    (AggregationDoubleSum (OutputName $ metricVarName var)
+                          (MetricName $ metricName metric))
+    (BoundMetric $ metricVarName var)
+
 
 count :: MetricVar v => v -> QueryF ds (BoundMetric ds v)
 count var = liftF $ QueryLAggregation

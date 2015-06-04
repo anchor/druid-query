@@ -9,6 +9,7 @@
 
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 
 module Network.Druid.Query.DSLSpec where
 
@@ -16,63 +17,70 @@ import Test.Hspec
 import Control.Applicative
 import Data.Aeson
 import Network.Druid.Query.DSL
+import Data.Time.QQ
 import Network.Druid.Query.AST
+import Control.Monad
 import Network.Druid.Query.ASTSpec(groupByQueryQ)
-import Pipes
-import qualified Pipes.Prelude as P
 
-data Phones = Phones
+-- * Data source
+data SampleDS = SampleDS
 
-data Carrier = Carrier
-data Make = Make
-data Usage = Usage
+-- * Metrics
+data CarrierM = CarrierM
+data MakeM = MakeM
+data DeviceM = DeviceM
+data UserCountM = UserCountM
+data DataTransferM = DataTransferM
 
-data UsageSum = UsageSum
-data Count = Count
+-- * Vars
+data TotalUsageV = TotalUsageV
+data DataTransferV = DataTransferV
 
-instance DataSource Phones where
-    dataSourceName _ = "phone_source"
-instance Dimension Carrier where
+-- * Mapping to schema
+instance DataSource SampleDS where
+    dataSourceName _ = "sample_datasource"
+instance Dimension CarrierM where
     dimensionName _ = "carrier"
-instance Dimension Make where
+instance Dimension DeviceM where
+    dimensionName _ = "device"
+instance Dimension MakeM where
     dimensionName _ = "make"
-instance Metric Usage where
-    metricName _ = "usage"
-instance MetricVar UsageSum where
-    metricVarName _ = "total_usage"
-instance MetricVar Count where
-    metricVarName _ = "count"
+instance Metric UserCountM where
+    metricName _ = "user_count"
+instance Metric DataTransferM where
+    metricName _ = "data_transfer"
 
-instance HasDimension Phones Carrier
-instance HasDimension Phones Make
-instance HasMetric Phones Usage
+instance MetricVar TotalUsageV where
+    metricVarName _ = "total_usage"
+instance MetricVar DataTransferV where
+    metricVarName _ = "data_transfer"
+
+-- * Relationships
+instance HasDimension SampleDS CarrierM
+instance HasDimension SampleDS MakeM
+instance HasDimension SampleDS DeviceM
+instance HasMetric SampleDS UserCountM
+instance HasMetric SampleDS DataTransferM
+
+groupByQueryL :: QueryF SampleDS ()
+groupByQueryL = do
+    applyFilter $ filterSelector CarrierM "AT&T"
+    applyFilter $ filterOr [ filterSelector MakeM "Apple"
+                           , filterSelector MakeM "Samsung"
+                           ]
+    total_usage <- longSum TotalUsageV UserCountM
+    transfer <- doubleSum DataTransferV DataTransferM
+
+    undefined
 
 spec :: Spec
 spec = 
     describe "ideal DSL" $ do
         it "builds correct query" $ do
-            groupByQuery Phones [SomeDimension Carrier] GranularityDay [] $ do
-                applyFilter $ filterAnd
-                    [ filterAnd [filterSelector Carrier "AT&T"]
-                    , filterSelector Carrier "AT&T"
-                    , filterSelector Make "Samsung"
-                    ]
-                longSum Usage UsageSum
-            `shouldBe` groupByQueryQ
-
-        it "decodes things it should" $ do
-            let query = (,) <$> longSum Usage UsageSum <*> count Count
-            r <- groupBy "http://localhost:8084/druid/v2/"
-                         Phones
-                         [SomeDimension Carrier]
-                         GranularityDay
-                         []
-                         query $ \(_, cnt) look pipe -> do
-                runEffect $
-                    pipe
-                    >-> (await >>= \v -> yield $ look cnt v)
-                    >-> P.print
-                
-                
-                
-            r `shouldBe` ()
+            let q = groupByQuery SampleDS
+                                 [SomeDimension CarrierM, SomeDimension DeviceM]
+                                 GranularityDay
+                                 [ Interval [utcIso8601| 2012-01-01 |]
+                                            [utcIso8601| 2012-01-03 |] ]
+                                 groupByQueryL
+            q `shouldBe` groupByQueryQ

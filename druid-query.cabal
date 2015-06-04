@@ -24,23 +24,21 @@ library
                      , Network.Druid.Query.DSL
   build-depends:       base >=4.7 && <4.8
                      , aeson
-                     , scientific
                      , unordered-containers
                      , bytestring
                      , exceptions
-                     , pipes
-                     , lens-family-core
-                     , pipes-http
-                     , pipes-bytestring
                      , time-locale-compat
+                     , http-client
+                     , http-client-tls
                      , transformers
+                     , scientific
                      , mtl
-                     , pipes-aeson
                      , time
+                     , free
                      , free
                      , text
                      , unordered-containers
-                     , vector
+
                      , time-qq
 
 test-suite unit
