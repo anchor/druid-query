@@ -56,9 +56,13 @@ class MetricVar v where
 
 data QueryL ds a where
     QueryLFilter :: FilterL ds -> a -> QueryL ds a
-    QueryLAggregation :: Aggregation -> a -> QueryL ds a
+    QueryLAggregationIgnore :: AggregationL -> a -> QueryL ds a
+    QueryLAggregationLet :: AggregationL -> (PostAggregation -> QueryL ds a) -> QueryL ds a
     QueryLPostAggregation :: PostAggregation -> a -> QueryL ds a
   deriving Functor
+
+newtype AggregationL ds = AggregationL { unAggregationL :: Filter }
+  deriving ToJSON
 
 newtype FilterL ds = FilterL { unFilterL :: Filter }
   deriving ToJSON
@@ -134,7 +138,7 @@ flattenQuery = mconcat . go
     go (Free x) = case x of
         QueryLFilter (FilterL filt) k ->
             mempty { _flattenedQueryFilter = Just filt } : go k
-        QueryLAggregation agg k ->
+        QueryLAggregationIgnore agg k ->
             mempty { _flattenedQueryAggregations = [agg] } : go k
         QueryLPostAggregation pagg k ->
             mempty { _flattenedQueryPostAggregations = Just [pagg] } : go k
@@ -154,8 +158,8 @@ filterSelector dimension =
 
 -- * Aggregators
 
-longSum :: (MetricVar v, HasMetric ds m) => v -> m -> QueryF ds (BoundMetric ds v)
-longSum var metric = liftF $ QueryLAggregation
+longSum :: HasMetric ds m => m -> AggregationL ds
+longSum var metric = QueryLAggregation
     (AggregationLongSum (OutputName $ metricVarName var)
                         (MetricName $ metricName metric))
     (BoundMetric $ metricVarName var)
