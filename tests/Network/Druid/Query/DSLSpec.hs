@@ -10,8 +10,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE RebindableSyntax #-}
-{-# LANGUAGE TypeOperators #-}
 
 module Network.Druid.Query.DSLSpec where
 
@@ -21,11 +19,8 @@ import Data.Aeson
 import Network.Druid.Query.DSL
 import Data.Time.QQ
 import Network.Druid.Query.AST
-import Control.Monad.Indexed.Free
-import Control.Monad.Indexed
-import Data.String
+import Control.Monad
 import Network.Druid.Query.ASTSpec(groupByQueryQ)
-import Prelude hiding (Monad(..))
 
 -- * Data source
 data SampleDS = SampleDS
@@ -67,29 +62,16 @@ instance HasDimension SampleDS DeviceM
 instance HasMetric SampleDS UserCountM
 instance HasMetric SampleDS DataTransferM
 
-(>>=) :: IxMonad m => m i j a -> (a -> m j k b) -> m i k b
-(>>=) = (>>>=)
-
-(>>) :: IxMonad m => m i j a -> m j k b -> m i k b
-a >> b = a >>>= \_ -> b
-
-fail :: String -> a
-fail = error
-return :: IxPointed m => a -> m i i a
-return = ireturn
-
-groupByQueryL :: QueryF SampleDS st (DoubleSum DataTransferM :| LongSum UserCountM :| st) ()
+groupByQueryL :: QueryF SampleDS ()
 groupByQueryL = do
     applyFilter $ filterSelector CarrierM "AT&T"
     applyFilter $ filterOr [ filterSelector MakeM "Apple"
                            , filterSelector MakeM "Samsung"
                            ]
-    longSum UserCountM
-    doubleSum DataTransferM
+    total_usage <- longSum TotalUsageV UserCountM
+    transfer <- doubleSum DataTransferV DataTransferM
 
-    x <- deref (LongSum UserCountM)
-    postAggregate $ x |+| x |+| x
-    return ()
+    undefined
 
 spec :: Spec
 spec = 
@@ -101,4 +83,4 @@ spec =
                                  [ Interval [utcIso8601| 2012-01-01 |]
                                             [utcIso8601| 2012-01-03 |] ]
                                  groupByQueryL
-            encode q `shouldBe` encode groupByQueryQ
+            q `shouldBe` groupByQueryQ
