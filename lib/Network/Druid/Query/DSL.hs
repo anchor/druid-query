@@ -13,13 +13,58 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE GADTSyntax #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-
 module Network.Druid.Query.DSL
+(
+    -- * Specifying data sources, metrics and dimensions.
+    --
+    -- | XXX Some words about data source specification
+    DataSource(..),
+    Dimension(..),
+    HasDimension,
+    SomeDimension(..),
+    Metric(..),
+    HasMetric,
+
+    -- * DSL types
+    QueryL,
+    QueryF,
+    AggregationL,
+    FilterL,
+    PostAggregationL,
+
+    -- * DSL syntax
+    letF,
+    emitF,
+    filterF,
+    postAggregationF,
+
+    -- * Filtering
+    filterAnd,
+    filterOr,
+    filterSelector,
+
+    -- * Aggregators
+    longSum,
+    doubleSum,
+    count,
+
+    -- * Post aggregators
+    (|+|),
+    (|/|),
+    (|*|),
+    (|-|),
+    quotient,
+
+    -- * Querying
+    groupByQuery,
+
+    -- * AST re-exports
+    Granularity(..),
+    Interval(..),
+)
 where
 
 import Network.Druid.Query.AST
@@ -28,51 +73,79 @@ import Data.Text(Text)
 import Control.Monad.Free
 import Data.Aeson
 import qualified Data.Text as T
-import qualified Data.ByteString.Lazy as LBS
 import Data.Monoid
-import qualified Data.HashMap.Strict as HM
 import Control.Applicative
-import Control.Monad.State.Strict
-import Data.Scientific
-import Network.HTTP.Client
-import Network.HTTP.Client.TLS
-import Data.ByteString(ByteString)
 
+-- | A 'DataSource' in druid is equivalent to a database "table".
 class DataSource ds where
     dataSourceName :: ds -> Text
 
+-- | 'DataSource's have any number of 'Dimensions'
 class Dimension d where
     dimensionName :: d -> Text
 
+-- | A relation from 'DataSource' to 'Dimension' 
 class Dimension d => HasDimension ds d
-
+ 
+-- | 'DataSource's have any number of 'Metric's
 class Metric m where
     metricName :: m -> Text
 
+-- | A relation from 'DataSource' to 'Metric' 
 class Metric m => HasMetric ds m
 
-class MetricVar v where
-    metricVarName :: v -> Text
-
+-- | A query language
 data QueryL ds a where
-    QueryLFilter :: FilterL ds -> a -> QueryL ds a
-    QueryLAggregationIgnore :: AggregationL -> a -> QueryL ds a
-    QueryLAggregationLet :: AggregationL -> (PostAggregation -> QueryL ds a) -> QueryL ds a
-    QueryLPostAggregation :: PostAggregation -> a -> QueryL ds a
+    -- Lifting a filter into the DSL. Multiple filters are anded together.
+    QueryLFilter
+        :: FilterL ds
+        -> a
+        -> QueryL ds a
+    -- Emit an 'Aggregation' as a named output
+    QueryLAggregationEmit
+        :: AggregationL ds
+        -> OutputName
+        -> a
+        -> QueryL ds a
+    -- Bind an 'Aggregation' as 'PostAggregation' field lookup via HOAS.
+    QueryLAggregationLet
+        :: AggregationL ds
+        -> (PostAggregationL ds
+        -> QueryF ds a)
+        -> QueryL ds a
+    -- Lift a single post aggregation
+    QueryLPostAggregation
+        :: PostAggregationL ds
+        -> OutputName
+        -> a
+        -> QueryL ds a
   deriving Functor
 
-newtype AggregationL ds = AggregationL { unAggregationL :: Filter }
-  deriving ToJSON
+-- | The 'Aggregation' sub-language. Values at this level are things like
+-- 'doubleSum'. These must be lifted into the 'QueryF' free monad via 'letF' or
+-- 'emitF'.
+data AggregationL ds = AggregationL
+    { _createAggregation :: OutputName -> Aggregation }
 
+-- | The 'Filter' sub-language. Values at this level are things like
+-- 'filterSelector'. These must be lifted into the 'QueryF' free monad via
+-- 'filterF'.
 newtype FilterL ds = FilterL { unFilterL :: Filter }
-  deriving ToJSON
 
+-- | The 'PostAggregation' sub-language. Values at this level are things like
+-- '(|*|)'. These must be lifted into the 'QueryF' free monad via
+-- 'postAggregationF'. You can bind 'Aggregators' to 'PostAggregation's via
+-- 'letF'.
+newtype PostAggregationL ds = PostAggregationL PostAggregation
+
+-- | The QueryF free monad
 type QueryF ds = Free (QueryL ds)
 
-newtype BoundMetric ds var = BoundMetric Text
-
+-- | An existential wrapper for wrapping things that are a 'Dimenson' of a
+-- given 'DataSource'. Used for functions like 'groupByQueryL'.
 data SomeDimension ds = forall a. HasDimension ds a => SomeDimension a
 
+-- | A data type to hold the accumulations whilst traversing our QueryF
 data FlattenedQuery = FlattenedQuery
     { _flattenedQueryAggregations     :: [Aggregation]
     , _flattenedQueryPostAggregations :: Maybe [PostAggregation]
@@ -94,18 +167,17 @@ joinFilters (Just filt1) (Just filt2)
 joinFilters filt1 filt2
     = filt1 <|> filt2
 
-runQuery :: String -> Query -> IO (Either String Value)
-runQuery uri query = do
-    req <- parseUrl uri
-    let req' = req { method = "POST"
-                   , requestBody = RequestBodyLBS (encode query)
-                   }
+letF :: AggregationL ds -> (PostAggregationL ds -> QueryF ds a) -> QueryF ds a
+letF agg k = liftF $ QueryLAggregationLet agg k
 
-    withManager tlsManagerSettings $ \m ->
-        withResponse req' m $ \resp -> do
-            -- Do not stream, Druid will not stream, plus we're dealing with
-            -- JSON so let's just not go there.
-            eitherDecode . LBS.fromChunks <$> brConsume (responseBody resp)
+emitF :: OutputName -> AggregationL ds -> QueryF ds ()
+emitF on agg = liftF $ QueryLAggregationEmit agg on ()
+
+filterF :: FilterL ds -> QueryF ds ()
+filterF filt = liftF $ QueryLFilter filt ()
+
+postAggregationF :: OutputName -> PostAggregationL ds -> QueryF ds ()
+postAggregationF on pa = liftF $ QueryLPostAggregation pa on ()
 
 groupByQuery
     :: DataSource ds
@@ -131,20 +203,24 @@ groupByQuery ds dimensions granularity intervals qf = QueryGroupBy
     FlattenedQuery{..} = flattenQuery qf
 
 flattenQuery :: QueryF ds a -> FlattenedQuery
-flattenQuery = mconcat . go
+flattenQuery = mconcat . go 0 -- 0 is where variable naming starts
   where
-    go :: QueryF ds a -> [FlattenedQuery]
-    go (Pure _) = []
-    go (Free x) = case x of
+    go :: Int -> QueryF ds a -> [FlattenedQuery]
+    go _ (Pure _) = []
+    go i (Free x) = case x of
         QueryLFilter (FilterL filt) k ->
-            mempty { _flattenedQueryFilter = Just filt } : go k
-        QueryLAggregationIgnore agg k ->
-            mempty { _flattenedQueryAggregations = [agg] } : go k
-        QueryLPostAggregation pagg k ->
-            mempty { _flattenedQueryPostAggregations = Just [pagg] } : go k
-
-applyFilter :: FilterL ds -> QueryF ds ()
-applyFilter filt = liftF $ QueryLFilter filt ()
+            mempty { _flattenedQueryFilter = Just filt } : go i k
+        QueryLAggregationEmit (AggregationL agg) on k ->
+            mempty { _flattenedQueryAggregations = [agg on] } : go i k
+        QueryLAggregationLet (AggregationL agg) k ->
+            let on = OutputName $ "__var_" <> T.pack (show i)
+                k' = k $ PostAggregationL $ PostAggregationFieldAccess on
+            in mempty { _flattenedQueryAggregations = [agg on] } : go (succ i) k'
+        QueryLPostAggregation (PostAggregationL pagg) on k ->
+            -- Replace the last post aggregation's automatically generated
+            -- output name with the user-provided one
+            let pagg' = pagg { _postAggregationName = on }
+            in mempty { _flattenedQueryPostAggregations = Just [pagg'] } : go i k
 
 filterAnd :: [FilterL ds] -> FilterL ds
 filterAnd = FilterL . FilterAnd . fmap unFilterL
@@ -156,22 +232,40 @@ filterSelector :: HasDimension ds d => d -> Text -> FilterL ds
 filterSelector dimension =
     FilterL . FilterSelector (DimensionName $ dimensionName dimension)
 
--- * Aggregators
-
 longSum :: HasMetric ds m => m -> AggregationL ds
-longSum var metric = QueryLAggregation
-    (AggregationLongSum (OutputName $ metricVarName var)
-                        (MetricName $ metricName metric))
-    (BoundMetric $ metricVarName var)
+longSum metric = AggregationL $ \v -> 
+    AggregationLongSum v (MetricName $ metricName metric)
 
-doubleSum :: (MetricVar v, HasMetric ds m) => v -> m -> QueryF ds (BoundMetric ds v)
-doubleSum var metric = liftF $ QueryLAggregation
-    (AggregationDoubleSum (OutputName $ metricVarName var)
-                          (MetricName $ metricName metric))
-    (BoundMetric $ metricVarName var)
+doubleSum :: HasMetric ds m => m -> AggregationL ds
+doubleSum metric = AggregationL $ \v -> 
+    AggregationDoubleSum v (MetricName $ metricName metric)
+
+count :: AggregationL ds
+count = AggregationL AggregationCount
 
 
-count :: MetricVar v => v -> QueryF ds (BoundMetric ds v)
-count var = liftF $ QueryLAggregation
-    (AggregationCount (OutputName $ metricVarName var))
-    (BoundMetric $ metricVarName var)
+(|+|) :: PostAggregationL ds -> PostAggregationL ds -> PostAggregationL ds
+(|+|) = arithHelper "sum_" APlus
+
+(|/|) :: PostAggregationL ds -> PostAggregationL ds -> PostAggregationL ds
+(|/|) = arithHelper "div_" ADiv
+
+(|*|) :: PostAggregationL ds -> PostAggregationL ds -> PostAggregationL ds
+(|*|) = arithHelper "mult_" AMult
+
+(|-|) :: PostAggregationL ds -> PostAggregationL ds -> PostAggregationL ds
+(|-|) = arithHelper "minus_" AMinus
+
+quotient :: PostAggregationL ds -> PostAggregationL ds -> PostAggregationL ds
+quotient = arithHelper "quot_" AQuot
+
+arithHelper
+    :: Text
+    -> ArithmeticFunction
+    -> PostAggregationL ds
+    -> PostAggregationL ds
+    -> PostAggregationL ds
+arithHelper var arith (PostAggregationL pa1) (PostAggregationL pa2) = PostAggregationL $
+    let OutputName on1 = _postAggregationName pa1
+        OutputName on2 = _postAggregationName pa2
+    in PostAggregationArithmetic (OutputName $ var <> on1 <> "_" <> on2) arith [pa1, pa2] Nothing

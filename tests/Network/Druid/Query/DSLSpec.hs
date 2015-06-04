@@ -13,14 +13,11 @@
 
 module Network.Druid.Query.DSLSpec where
 
-import Test.Hspec
-import Control.Applicative
-import Data.Aeson
 import Network.Druid.Query.DSL
+
+import Test.Hspec
 import Data.Time.QQ
-import Network.Druid.Query.AST
-import Control.Monad
-import Network.Druid.Query.ASTSpec(groupByQueryQ)
+import Data.Aeson
 
 -- * Data source
 data SampleDS = SampleDS
@@ -31,10 +28,6 @@ data MakeM = MakeM
 data DeviceM = DeviceM
 data UserCountM = UserCountM
 data DataTransferM = DataTransferM
-
--- * Vars
-data TotalUsageV = TotalUsageV
-data DataTransferV = DataTransferV
 
 -- * Mapping to schema
 instance DataSource SampleDS where
@@ -50,11 +43,6 @@ instance Metric UserCountM where
 instance Metric DataTransferM where
     metricName _ = "data_transfer"
 
-instance MetricVar TotalUsageV where
-    metricVarName _ = "total_usage"
-instance MetricVar DataTransferV where
-    metricVarName _ = "data_transfer"
-
 -- * Relationships
 instance HasDimension SampleDS CarrierM
 instance HasDimension SampleDS MakeM
@@ -64,14 +52,13 @@ instance HasMetric SampleDS DataTransferM
 
 groupByQueryL :: QueryF SampleDS ()
 groupByQueryL = do
-    applyFilter $ filterSelector CarrierM "AT&T"
-    applyFilter $ filterOr [ filterSelector MakeM "Apple"
-                           , filterSelector MakeM "Samsung"
-                           ]
-    total_usage <- longSum TotalUsageV UserCountM
-    transfer <- doubleSum DataTransferV DataTransferM
-
-    undefined
+    filterF $ filterSelector CarrierM "AT&T"
+    filterF $ filterOr [ filterSelector MakeM "Apple"
+                       , filterSelector MakeM "Samsung"
+                       ]
+    letF (doubleSum DataTransferM) $ \transfer -> 
+        letF (longSum UserCountM) $ \user ->
+            postAggregationF "usage_transfer" $ user |*| transfer
 
 spec :: Spec
 spec = 
@@ -83,4 +70,4 @@ spec =
                                  [ Interval [utcIso8601| 2012-01-01 |]
                                             [utcIso8601| 2012-01-03 |] ]
                                  groupByQueryL
-            q `shouldBe` groupByQueryQ
+            toJSON q `shouldBe` ""
