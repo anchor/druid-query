@@ -20,7 +20,47 @@ module Network.Druid.Query.DSL
 (
     -- * Specifying data sources, metrics and dimensions.
     --
-    -- | XXX Some words about data source specification
+    -- | In order for the DSL to provide a type safe interface to druid data
+    -- sources, metrics and dimensions, we will need to encode this information
+    -- at the type level. This is done like so:
+    --
+    -- @
+    --   -- * Data source
+    --   data SampleDS = SampleDS
+    --   
+    --   -- * Dimensions
+    --   data CarrierD = CarrierD
+    --   data MakeD = MakeD
+    --   data DeviceD = DeviceD
+    --   
+    --   -- * Metrics
+    --   data UserCountM = UserCountM
+    --   data DataTransferM = DataTransferM
+    --   
+    --   -- * Mapping to schema
+    --   instance DataSource SampleDS where
+    --       dataSourceName _ = "sample_datasource"
+    --   
+    --   instance Dimension CarrierD where
+    --       dimensionName _ = "carrier"
+    --   instance Dimension DeviceD where
+    --       dimensionName _ = "device"
+    --   instance Dimension MakeD where
+    --       dimensionName _ = "make"
+    --   
+    --   instance Metric UserCountM where
+    --       metricName _ = "user_count"
+    --   instance Metric DataTransferM where
+    --       metricName _ = "data_transfer"
+    --   
+    --   -- * Relationships
+    --   instance HasDimension SampleDS CarrierD
+    --   instance HasDimension SampleDS MakeD
+    --   instance HasDimension SampleDS DeviceD
+    --   
+    --   instance HasMetric SampleDS UserCountM
+    --   instance HasMetric SampleDS DataTransferM
+    -- @
     DataSource(..),
     Dimension(..),
     HasDimension,
@@ -71,7 +111,6 @@ import Network.Druid.Query.AST
 
 import Data.Text(Text)
 import Control.Monad.Free
-import Data.Aeson
 import qualified Data.Text as T
 import Data.Monoid
 import Control.Applicative
@@ -161,24 +200,36 @@ instance Monoid FlattenedQuery where
                        (pagg1 <> pagg2)
                        (joinFilters filt1 filt2)
 
+-- | And some filters together if we have two, otherwise pick one.
 joinFilters :: Maybe Filter -> Maybe Filter -> Maybe Filter
 joinFilters (Just filt1) (Just filt2)
     = Just $ FilterAnd [filt1, filt2]
 joinFilters filt1 filt2
     = filt1 <|> filt2
 
+-- | Bind an 'Aggregation' to be used in a 'PostAggregation'. This will, in
+-- practice, create a variable like "__var_0", and take care of relevant
+-- substitutions for you.
 letF :: AggregationL ds -> (PostAggregationL ds -> QueryF ds a) -> QueryF ds a
 letF agg k = liftF $ QueryLAggregationLet agg k
 
+-- | Emit an aggregation as the given 'OutputName'. Use this if you don't want
+-- to do further 'PostAggregation's
 emitF :: OutputName -> AggregationL ds -> QueryF ds ()
 emitF on agg = liftF $ QueryLAggregationEmit agg on ()
 
+-- | Apply a single filter. If you call this more than once, the filters will
+-- be andded together.
 filterF :: FilterL ds -> QueryF ds ()
 filterF filt = liftF $ QueryLFilter filt ()
 
+-- | Apply a single 'PostAggregation'. The last 'PostAggregation' will be taken.
+-- You should never specify this more than once, but, the types do not prevent
+-- you from doing so.
 postAggregationF :: OutputName -> PostAggregationL ds -> QueryF ds ()
 postAggregationF on pa = liftF $ QueryLPostAggregation pa on ()
 
+-- | Create a 'QueryGroupBy' given some query details and a 'QueryF'.
 groupByQuery
     :: DataSource ds
     => ds
@@ -202,6 +253,7 @@ groupByQuery ds dimensions granularity intervals qf = QueryGroupBy
   where
     FlattenedQuery{..} = flattenQuery qf
 
+-- | Extract the things we need to generate a 'Query' from the 'QueryF'
 flattenQuery :: QueryF ds a -> FlattenedQuery
 flattenQuery = mconcat . go 0 -- 0 is where variable naming starts
   where
@@ -222,43 +274,55 @@ flattenQuery = mconcat . go 0 -- 0 is where variable naming starts
             let pagg' = pagg { _postAggregationName = on }
             in mempty { _flattenedQueryPostAggregations = Just [pagg'] } : go i k
 
+-- | And a list of "FilterL's together.
 filterAnd :: [FilterL ds] -> FilterL ds
 filterAnd = FilterL . FilterAnd . fmap unFilterL
 
+-- | Or a list of "FilterL's together.
 filterOr :: [FilterL ds] -> FilterL ds
 filterOr = FilterL . FilterOr . fmap unFilterL
 
+-- | Ensure that a dimension matches the given value.
 filterSelector :: HasDimension ds d => d -> Text -> FilterL ds
 filterSelector dimension =
     FilterL . FilterSelector (DimensionName $ dimensionName dimension)
 
+-- | Sum into a 64 bit signed integer
 longSum :: HasMetric ds m => m -> AggregationL ds
 longSum metric = AggregationL $ \v -> 
     AggregationLongSum v (MetricName $ metricName metric)
 
+-- | Sum into a 64 bit float
 doubleSum :: HasMetric ds m => m -> AggregationL ds
 doubleSum metric = AggregationL $ \v -> 
     AggregationDoubleSum v (MetricName $ metricName metric)
 
+-- | Count the rows that match the filters
 count :: AggregationL ds
 count = AggregationL AggregationCount
 
 
+-- | Sum
 (|+|) :: PostAggregationL ds -> PostAggregationL ds -> PostAggregationL ds
 (|+|) = arithHelper "sum_" APlus
 
+-- | Division
 (|/|) :: PostAggregationL ds -> PostAggregationL ds -> PostAggregationL ds
 (|/|) = arithHelper "div_" ADiv
 
+-- | Multiplication
 (|*|) :: PostAggregationL ds -> PostAggregationL ds -> PostAggregationL ds
 (|*|) = arithHelper "mult_" AMult
 
+-- | Subtraction
 (|-|) :: PostAggregationL ds -> PostAggregationL ds -> PostAggregationL ds
 (|-|) = arithHelper "minus_" AMinus
 
+-- | Floating point division
 quotient :: PostAggregationL ds -> PostAggregationL ds -> PostAggregationL ds
 quotient = arithHelper "quot_" AQuot
 
+-- | Helper for PostAggregator arithmetic functions.
 arithHelper
     :: Text
     -> ArithmeticFunction
