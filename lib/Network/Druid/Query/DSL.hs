@@ -65,6 +65,7 @@ module Network.Druid.Query.DSL
     HasDimension,
     SomeDimension(..),
     Metric(..),
+    SomeMetric(..),
     HasMetric,
 
     -- * DSL types
@@ -89,6 +90,7 @@ module Network.Druid.Query.DSL
     longSum,
     doubleSum,
     count,
+    jsAggregate,
 
     -- * Post aggregators
     (|+|),
@@ -182,6 +184,10 @@ type QueryF ds = Free (QueryL ds)
 -- | An existential wrapper for wrapping things that are a 'Dimenson' of a
 -- given 'DataSource'. Used for functions like 'groupByQueryL'.
 data SomeDimension ds = forall a. HasDimension ds a => SomeDimension a
+
+-- | An existential wrapper for wrapping things that are a 'Metric' of a
+-- given 'DataSource'. Used for functions like 'jsAggregate'.
+data SomeMetric ds = forall a. HasMetric ds a => SomeMetric a
 
 -- | A data type to hold the accumulations whilst traversing our QueryF
 data FlattenedQuery = FlattenedQuery
@@ -299,6 +305,21 @@ doubleSum metric = AggregationL $ \v ->
 count :: AggregationL ds
 count = AggregationL AggregationCount
 
+-- | JavaScript aggregator. A bit unsafe, you can use JMacro for a bit more
+-- safety but will still need to ensure that arity lines up.
+jsAggregate
+    :: [SomeMetric ds]
+    -- ^ Input metrics to aggregate function
+    -> JS
+    -- ^ Aggregate function (algebra)
+    -> JS
+    -- ^ Combine function (commutative operation for chunks)
+    -> JS
+    -- ^ Reset function. (default value in fold)
+    -> AggregationL ds
+jsAggregate metrics agg comb reset = AggregationL $ \v ->
+    let ms =  fmap (\(SomeMetric m) -> MetricName $ metricName m) metrics
+    in AggregationJS v ms agg comb reset
 
 -- | Sum
 (|+|) :: PostAggregationL ds -> PostAggregationL ds -> PostAggregationL ds
