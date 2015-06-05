@@ -222,9 +222,8 @@ emitF on agg = liftF $ QueryLAggregationEmit agg on ()
 filterF :: FilterL ds -> QueryF ds ()
 filterF filt = liftF $ QueryLFilter filt ()
 
--- | Apply a single 'PostAggregation'. The last 'PostAggregation' will be taken.
--- You should never specify this more than once, but, the types do not prevent
--- you from doing so.
+-- | Apply a 'PostAggregation'. May be called several times for several
+-- post aggregations.
 postAggregationF :: OutputName -> PostAggregationL ds -> QueryF ds ()
 postAggregationF on pa = liftF $ QueryLPostAggregation pa on ()
 
