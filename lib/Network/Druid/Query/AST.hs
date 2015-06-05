@@ -36,18 +36,19 @@ module Network.Druid.Query.AST
     OrderByColumnSpec(..),
     Direction(..),
     Bound(..),
+    JS(..),
 ) where
 
 import Data.Aeson
 import Data.Maybe
 import Data.Monoid
-import Data.Time.Locale.Compat(defaultTimeLocale)
 import Data.Scientific (Scientific (..))
 import Data.String
 import Data.Text (Text)
-import Data.Time.Clock(UTCTime(..))
 import qualified Data.Text as T
-import Data.Time.Format(formatTime)
+import Data.Time.Clock (UTCTime (..))
+import Data.Time.Format (formatTime)
+import Data.Time.Locale.Compat (defaultTimeLocale)
 
 -- | Druid has numerous query types for various use cases. Queries are composed
 -- of various JSON properties and Druid has different types of queries for
@@ -57,7 +58,7 @@ data Query
     -- array of JSON objects where each object represents a value asked for by
     -- the timeseries query.
     = QueryTimeSeries
-        { _queryDataSourceName       :: DataSourceName
+        { _queryDataSourceName   :: DataSourceName
         , _queryGranularity      :: Granularity
         , _queryFilter           :: Maybe Filter
         , _queryAggregations     :: [Aggregation]
@@ -79,13 +80,13 @@ data Query
     -- will be 100%, and the ordering of the results after that is not
     -- guaranteed. TopNs can be made more accurate by increasing the threshold.
     | QueryTopN
-        { _queryDataSourceName       :: DataSourceName
+        { _queryDataSourceName   :: DataSourceName
         , _queryGranularity      :: Granularity
         , _queryFilter           :: Maybe Filter
         , _queryAggregations     :: [Aggregation]
         , _queryPostAggregations :: Maybe [PostAggregation]
         , _queryIntervals        :: [Interval]
-        , _queryDimensionName        :: DimensionName
+        , _queryDimensionName    :: DimensionName
         , _queryThreshold        :: Threshold
         , _queryMetric           :: MetricName
         }
@@ -97,13 +98,13 @@ data Query
     -- groupBy over a single dimension, please look at TopN queries. The
     -- performance for that use case is also substantially better.
     | QueryGroupBy
-        { _queryDataSourceName       :: DataSourceName
+        { _queryDataSourceName   :: DataSourceName
         , _queryGranularity      :: Granularity
         , _queryFilter           :: Maybe Filter
         , _queryAggregations     :: [Aggregation]
         , _queryPostAggregations :: Maybe [PostAggregation]
         , _queryIntervals        :: [Interval]
-        , _queryDimensionNames       :: [DimensionName]
+        , _queryDimensionNames   :: [DimensionName]
         , _queryLimitSpec        :: Maybe LimitSpec
         , _queryHaving           :: Maybe Having
         }
@@ -111,7 +112,7 @@ data Query
     -- data set. '_queryBound' defaults to both if not set.'
     | QueryTimeBoundary
         { _queryDataSourceName :: DataSourceName
-        , _queryBound      :: Maybe Bound
+        , _queryBound          :: Maybe Bound
         }
   deriving (Eq, Show)
 
@@ -125,7 +126,7 @@ data Bound = MaxTime | MinTime
 -- ordering by a single metric, we highly recommend using 'QueryTopN' instead.
 -- The performance will be substantially better. Available options are:
 data LimitSpec = LimitSpecDefault
-    { _limitSpecLimit :: Integer
+    { _limitSpecLimit   :: Integer
     , _limitSpecColumns :: [OrderByColumnSpec]
     }
   deriving (Eq, Show)
@@ -134,7 +135,7 @@ data LimitSpec = LimitSpecDefault
 data OrderByColumnSpec
     = OrderByColumnSpecDirected
         { _orderByColumnSpecDimensionName :: DimensionName
-        , _orderByColumnSpecDirection :: Direction
+        , _orderByColumnSpecDirection     :: Direction
         }
     | OrderByColumnSpecSimple
         { _orderByColumnSpecDimensionName :: DimensionName }
@@ -161,11 +162,11 @@ data Having
         , _havingValue       :: Integer
         }
     | HavingAnd
-        { _havingSpecs       :: [Having] }
+        { _havingSpecs :: [Having] }
     | HavingOr
-        { _havingSpecs       :: [Having] }
+        { _havingSpecs :: [Having] }
     | HavingNot
-        { _havingSpec        :: Having }
+        { _havingSpec :: Having }
   deriving (Eq, Show)
 
 
@@ -205,14 +206,14 @@ data Filter
     -- filters.
     = FilterSelector
         { _selectorDimensionName :: DimensionName
-        , _selectorValue     :: Text
+        , _selectorValue         :: Text
         }
     | FilterRegularExpression
         { _selectorDimensionName :: DimensionName
-        , _selectorPattern   :: Text }
+        , _selectorPattern       :: Text }
     | FilterJS
         { _selectorDimensionName :: DimensionName
-        , _selectorFunction  :: JS }
+        , _selectorFunction      :: JS }
     | FilterAnd { _selectorFields :: [Filter] }
     | FilterOr  { _selectorFields :: [Filter] }
     | FilterNot { _selectorField :: Filter }
@@ -402,37 +403,37 @@ instance ToJSON Bound where
     toJSON MinTime = "minTime"
 
 instance ToJSON Having where
-    toJSON HavingEqualTo{..} = object $
+    toJSON HavingEqualTo{..} = object
         [ "type"        .= String "equalTo"
         , "aggregation" .= _havingAggregation
         , "value"       .= _havingValue
         ]
-    toJSON HavingGreaterThan{..} = object $
+    toJSON HavingGreaterThan{..} = object
         [ "type"        .= String "greaterThan"
         , "aggregation" .= _havingAggregation
         , "value"       .= _havingValue
         ]
-    toJSON HavingLessThan{..} = object $
+    toJSON HavingLessThan{..} = object
         [ "type"        .= String "lessThan"
         , "aggregation" .= _havingAggregation
         , "value"       .= _havingValue
         ]
-    toJSON HavingOr{..} = object $
+    toJSON HavingOr{..} = object
         [ "type"        .= String "or"
         , "havingSpecs" .= _havingSpecs
         ]
-    toJSON HavingAnd{..} = object $
+    toJSON HavingAnd{..} = object
         [ "type"        .= String "and"
         , "havingSpecs" .= _havingSpecs
         ]
-    toJSON HavingNot{..} = object $
+    toJSON HavingNot{..} = object
         [ "type"        .= String "not"
         , "havingSpec"  .= _havingSpec
         ]
-    
+
 
 instance ToJSON LimitSpec where
-    toJSON LimitSpecDefault{..} = object $
+    toJSON LimitSpecDefault{..} = object
         [ "type"    .= String "default"
         , "limit"   .= _limitSpecLimit
         , "columns" .=  _limitSpecColumns
@@ -440,7 +441,7 @@ instance ToJSON LimitSpec where
 
 instance ToJSON OrderByColumnSpec where
     toJSON OrderByColumnSpecSimple{..} = toJSON _orderByColumnSpecDimensionName
-    toJSON OrderByColumnSpecDirected{..} = object $
+    toJSON OrderByColumnSpecDirected{..} = object
         [ "dimension" .= _orderByColumnSpecDimensionName
         , "direction" .= case _orderByColumnSpecDirection of
                             Ascending -> String "ascending"
@@ -450,34 +451,34 @@ instance ToJSON OrderByColumnSpec where
 instance ToJSON Interval where
     toJSON Interval{..} =
         let (l,r) = (fmt _intervalStart, fmt _intervalEnd)
-        in String $ l <> "/" <> r 
+        in String $ l <> "/" <> r
       where
         fmt = T.pack . formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S%Q"
 
 instance ToJSON Aggregation where
-    toJSON AggregationCount{..} = object $
+    toJSON AggregationCount{..} = object
         [ "type" .= String "count"
         , "name" .= _aggregationName
         ]
-    toJSON AggregationLongSum{..} = object $
+    toJSON AggregationLongSum{..} = object
         [ "type"      .= String "longSum"
         , "name"      .= _aggregationName
         , "fieldName" .= _aggregationFieldName
         ]
-    toJSON AggregationDoubleSum{..} = object $
+    toJSON AggregationDoubleSum{..} = object
         [ "type"      .= String "doubleSum"
         , "name"      .= _aggregationName
         , "fieldName" .= _aggregationFieldName
         ]
-    toJSON AggregationMin{..} = object $
+    toJSON AggregationMin{..} = object
         [ "type"      .= String "min"
         , "name"      .= _aggregationName
         ]
-    toJSON AggregationMax{..} = object $
+    toJSON AggregationMax{..} = object
         [ "type"      .= String "max"
         , "name"      .= _aggregationName
         ]
-    toJSON AggregationJS{..} = object $
+    toJSON AggregationJS{..} = object
         [ "type"        .= String "javascript"
         , "name"        .= _aggregationName
         , "fieldNames"  .= _aggregationFieldNames
@@ -491,12 +492,12 @@ instance ToJSON Aggregation where
         , "fieldNames" .= _aggregationFieldNames
         ]
         <> fmap ("byRow" .=) (maybeToList _aggregationByRow)
-    toJSON AggregationHyperUnique{..} = object $
+    toJSON AggregationHyperUnique{..} = object
         [ "type"      .= String "hyperUnique"
         , "name"      .= _aggregationName
         , "fieldName" .= _aggregationFieldName
         ]
-    toJSON AggregationFiltered{..} = object $
+    toJSON AggregationFiltered{..} = object
         [ "type"       .= String "filtered"
         , "filter"     .= _aggregationFilter
         , "aggregator" .= _aggregationAggregator
@@ -510,22 +511,22 @@ instance ToJSON PostAggregation where
         , "fields" .= _postAggregationFields
         ]
         <> fmap ("ordering" .=) (maybeToList _postAggregationOrdering)
-    toJSON PostAggregationFieldAccess{..} = object $
+    toJSON PostAggregationFieldAccess{..} = object
         [ "type"      .= String "fieldAccess"
         , "fieldName" .= _postAggregationFieldName
         ]
-    toJSON PostAggregationConstant{..} = object $
+    toJSON PostAggregationConstant{..} = object
         [ "type"  .= String "constant"
         , "name"  .= _postAggregationName
         , "value" .= Number (unNumericalValue _postAggregationValue)
         ]
-    toJSON PostAggregationJS{..} = object $
+    toJSON PostAggregationJS{..} = object
         [ "type"       .= String "javascript"
         , "name"       .= _postAggregationName
         , "fieldNames" .= _postAggregationFieldNames
         , "function"   .= _postAggregationFunction
         ]
-    toJSON PostAggregationHyperUniqueCardinality{..} = object $
+    toJSON PostAggregationHyperUniqueCardinality{..} = object
         [ "type"      .= String "hyperUniqueCardinality"
         , "fieldName" .= _postAggregationFieldName
         ]
@@ -554,30 +555,30 @@ instance ToJSON Granularity where
     toJSON GranularityDay           = "day"
 
 instance ToJSON Filter where
-    toJSON FilterSelector{..} = object $
+    toJSON FilterSelector{..} = object
         [ "type"      .= String "selector"
         , "dimension" .= _selectorDimensionName
         , "value"     .= _selectorValue
         ]
-    toJSON FilterRegularExpression{..} = object $
+    toJSON FilterRegularExpression{..} = object
         [ "type"      .= String "regex"
         , "dimension" .= _selectorDimensionName
         , "pattern"   .= _selectorPattern
         ]
-    toJSON FilterJS{..} = object $
+    toJSON FilterJS{..} = object
         [ "type"      .= String "javascript"
         , "dimension" .= _selectorDimensionName
         , "function"  .= _selectorFunction
         ]
-    toJSON FilterAnd{..} = object $
+    toJSON FilterAnd{..} = object
         [ "type"   .= String "and"
         , "fields" .= _selectorFields
         ]
-    toJSON FilterOr{..} = object $
+    toJSON FilterOr{..} = object
         [ "type"   .= String "or"
         , "fields" .= _selectorFields
         ]
-    toJSON FilterNot{..} = object $
+    toJSON FilterNot{..} = object
         [ "type"  .= String "not"
         , "field" .= _selectorField
         ]

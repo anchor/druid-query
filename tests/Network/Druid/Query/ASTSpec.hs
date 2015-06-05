@@ -8,15 +8,15 @@
 --
 
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE QuasiQuotes       #-}
 
 module Network.Druid.Query.ASTSpec where
 
-import Test.Hspec
 import Data.Aeson
-import Data.Aeson.QQ
 import Data.Aeson.Diff
+import Data.Aeson.QQ
 import Data.Time.QQ
+import Test.Hspec
 
 import Network.Druid.Query.AST
 
@@ -202,7 +202,7 @@ topNQueryQ = QueryTopN
     , _queryIntervals =
         [ Interval [utcIso8601| 2013-08-31 |] [utcIso8601| 2013-09-03 |] ]
     }
- 
+
 groupByQueryV :: Value
 groupByQueryV = [aesonQQ|
 {
@@ -318,7 +318,7 @@ groupByQueryQ = QueryGroupBy
                               , OrderByColumnSpecSimple "data_transfer"]
     , _queryHaving = Just $ HavingGreaterThan "total_usage" 100
     }
- 
+
 timeBoundaryQueryV :: Value
 timeBoundaryQueryV = [aesonQQ|
 {
@@ -335,7 +335,7 @@ timeBoundaryQueryQ = QueryTimeBoundary
     }
 
 spec :: Spec
-spec = 
+spec =
     describe "ToJSON for Query" $ do
         it "has correct output for known TimeSeries" $
             compareJSON timeSeriesQueryQ timeSeriesQueryV
@@ -343,9 +343,9 @@ spec =
         it "has correct output for known TopN" $
             compareJSON topNQueryQ topNQueryV
 
-        it "has correct output for known GroupBy" $ 
+        it "has correct output for known GroupBy" $
             compareJSON groupByQueryQ groupByQueryV
-            
+
         it "has correct output for known TimeBoundary" $
             compareJSON timeBoundaryQueryQ timeBoundaryQueryV
 

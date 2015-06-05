@@ -7,14 +7,13 @@
 -- the 3-clause BSD licence.
 --
 
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE GADTSyntax #-}
+{-# LANGUAGE DeriveFunctor             #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE RecordWildCards           #-}
 
 module Network.Druid.Query.DSL
 (
@@ -27,37 +26,37 @@ module Network.Druid.Query.DSL
     -- @
     --   -- * Data source
     --   data SampleDS = SampleDS
-    --   
+    --
     --   -- * Dimensions
     --   data CarrierD = CarrierD
     --   data MakeD = MakeD
     --   data DeviceD = DeviceD
-    --   
+    --
     --   -- * Metrics
     --   data UserCountM = UserCountM
     --   data DataTransferM = DataTransferM
-    --   
+    --
     --   -- * Mapping to schema
     --   instance DataSource SampleDS where
     --       dataSourceName _ = "sample_datasource"
-    --   
+    --
     --   instance Dimension CarrierD where
     --       dimensionName _ = "carrier"
     --   instance Dimension DeviceD where
     --       dimensionName _ = "device"
     --   instance Dimension MakeD where
     --       dimensionName _ = "make"
-    --   
+    --
     --   instance Metric UserCountM where
     --       metricName _ = "user_count"
     --   instance Metric DataTransferM where
     --       metricName _ = "data_transfer"
-    --   
+    --
     --   -- * Relationships
     --   instance HasDimension SampleDS CarrierD
     --   instance HasDimension SampleDS MakeD
     --   instance HasDimension SampleDS DeviceD
-    --   
+    --
     --   instance HasMetric SampleDS UserCountM
     --   instance HasMetric SampleDS DataTransferM
     -- @
@@ -109,11 +108,11 @@ where
 
 import Network.Druid.Query.AST
 
-import Data.Text(Text)
-import Control.Monad.Free
-import qualified Data.Text as T
-import Data.Monoid
 import Control.Applicative
+import Control.Monad.Free
+import Data.Monoid
+import Data.Text (Text)
+import qualified Data.Text as T
 
 -- | A 'DataSource' in druid is equivalent to a database "table".
 class DataSource ds where
@@ -123,14 +122,14 @@ class DataSource ds where
 class Dimension d where
     dimensionName :: d -> Text
 
--- | A relation from 'DataSource' to 'Dimension' 
+-- | A relation from 'DataSource' to 'Dimension'
 class Dimension d => HasDimension ds d
- 
+
 -- | 'DataSource's have any number of 'Metric's
 class Metric m where
     metricName :: m -> Text
 
--- | A relation from 'DataSource' to 'Metric' 
+-- | A relation from 'DataSource' to 'Metric'
 class Metric m => HasMetric ds m
 
 -- | A query language
@@ -289,12 +288,12 @@ filterSelector dimension =
 
 -- | Sum into a 64 bit signed integer
 longSum :: HasMetric ds m => m -> AggregationL ds
-longSum metric = AggregationL $ \v -> 
+longSum metric = AggregationL $ \v ->
     AggregationLongSum v (MetricName $ metricName metric)
 
 -- | Sum into a 64 bit float
 doubleSum :: HasMetric ds m => m -> AggregationL ds
-doubleSum metric = AggregationL $ \v -> 
+doubleSum metric = AggregationL $ \v ->
     AggregationDoubleSum v (MetricName $ metricName metric)
 
 -- | Count the rows that match the filters

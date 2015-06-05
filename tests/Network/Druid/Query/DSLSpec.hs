@@ -8,19 +8,17 @@
 --
 
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE QuasiQuotes           #-}
 
 module Network.Druid.Query.DSLSpec where
 
 import Network.Druid.Query.DSL
 
-import Test.Hspec
-import Data.Time.QQ
 import Data.Aeson
 import Data.Aeson.QQ
-
-import qualified Data.ByteString.Lazy.Char8 as T
+import Data.Time.QQ
+import Test.Hspec
 
 -- * Data source
 data SampleDS = SampleDS
@@ -64,7 +62,7 @@ groupByQueryL = do
     filterF $ filterOr [ filterSelector MakeD "Apple"
                        , filterSelector MakeD "Samsung"
                        ]
-    letF (doubleSum DataTransferM) $ \transfer -> 
+    letF (doubleSum DataTransferM) $ \transfer ->
         letF (longSum UserCountM) $ \user ->
             postAggregationF "usage_transfer" $ user |*| transfer
 
@@ -139,8 +137,8 @@ groupByQueryV = [aesonQQ|
 |]
 
 spec :: Spec
-spec = 
-    describe "ideal DSL" $ do
+spec =
+    describe "ideal DSL" $
         it "builds correct query" $ do
             let q = groupByQuery SampleDS
                                  [ SomeDimension CarrierD

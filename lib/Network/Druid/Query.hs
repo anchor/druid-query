@@ -21,13 +21,13 @@ module Network.Druid.Query
     module Network.Druid.Query.DSL,
 ) where
 
-import Network.Druid.Query.DSL
-import Network.Druid.Query.AST
+import Control.Applicative
 import Data.Aeson
+import Data.ByteString.Lazy as LBS
+import Network.Druid.Query.AST
+import Network.Druid.Query.DSL
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
-import Data.ByteString.Lazy as LBS
-import Control.Applicative
 
 -- | Execute a druid query, parsing the resulting JSON response is up to you.
 runQuery :: String -> Query -> IO (Either String Value)
@@ -38,7 +38,7 @@ runQuery uri query = do
                    }
 
     withManager tlsManagerSettings $ \m ->
-        withResponse req' m $ \resp -> do
+        withResponse req' m $ \resp ->
             -- Do not stream, Druid will not stream, plus we're dealing with
             -- JSON so let's just not go there.
             eitherDecode . LBS.fromChunks <$> brConsume (responseBody resp)

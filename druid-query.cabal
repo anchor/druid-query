@@ -25,17 +25,12 @@ library
                      , Network.Druid.Query.DSL
   build-depends:       base >=4.7 && <4.8
                      , aeson
-                     , unordered-containers
                      , bytestring
-                     , exceptions
                      , time-locale-compat
                      , http-client
                      , http-client-tls
-                     , transformers
                      , scientific
-                     , mtl
                      , time
-                     , free
                      , free
                      , text
                      , unordered-containers
